@@ -1,0 +1,16 @@
+# سیستم تشخیص حواس‌پرتی راننده — وابستگی‌ها
+# Python >= 3.10
+
+opencv-python>=4.8
+mediapipe>=0.10
+numpy>=1.26
+scipy>=1.11
+Flask>=3.0
+
+# ابزارهای توسعه و تست
+pytest>=7.0
+pytest-cov>=4.0
+
+# اختیاری — بهینه‌سازی مدل (Jetson / ONNX)
+# onnxruntime>=1.16
+# torch>=2.0

@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# خروجی‌های سیستم
+telemetry/
+*.db
+
+# مدل‌های دانلودشده (با scripts/download_model.py ساخته می‌شوند)
+assets/face_landmarker.task
+assets/*.onnx
+
+# ویدیو و فایل‌های موقت آزمون
+*.avi
+*.mp4
+tests/_sample.avi
+
+# محیط مجازی
+venv/
+.venv/
+
+# IDE
+.idea/
+.vscode/
