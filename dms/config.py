@@ -18,6 +18,16 @@ from pathlib import Path
 from typing import Tuple
 
 
+class ConfigError(ValueError):
+    """مقدار نامعتبر در پیکربندی."""
+
+
+def _check(condition: bool, message: str) -> None:
+    """اعتبارسنجی یک فیلد پیکربندی."""
+    if not condition:
+        raise ConfigError(message)
+
+
 @dataclass(frozen=True)
 class HeadPoseConfig:
     """آستانه‌های زاویه‌ای برای طبقه‌بندی وضعیت سر.
@@ -74,11 +84,36 @@ class DrowsinessConfig:
         ear_closed_threshold: آستانه بسته بودن چشم بر اساس Eye Aspect Ratio.
         ear_blink_frames: حداکثر طول پلک زدن طبیعی (فریم) که هشدار ایجاد نمی‌کند.
         closed_seconds: مدت بسته بودن پیوسته چشم‌ها برای اعلام خواب‌آلودگی (ثانیه).
+        nod_pitch_drop: حداقل افت pitch (درجه) برای شمارش یک «سر تکان».
+        nod_count: تعداد سر تکان در پنجره زمانی برای اعلام nodding.
+        nod_window_seconds: طول پنجره پایش سر تکان (ثانیه).
+        nodding_alert: اعلام خواب‌آلودگی در صورت سر تکان مکرر.
+        perclos_window_seconds: طول پنجره PERCLOS (درصد زمان بسته بودن چشم).
+        perclos_min_seconds: حداقل داده لازم قبل از ارزیابی PERCLOS.
+        perclos_threshold: PERCLOS بالاتر از این مقدار = خواب‌آلودگی
+            (مقدار مرجع ادبیات: ۰.۱۵ تا ۰.۳۰).
+        recovery_seconds: مدت باز ماندن پیوسته چشم‌ها (ثانیه) برای خروج
+            از حالت خواب‌آلودگی؛ تا آن زمان هشدار ادامه دارد.
     """
 
     ear_closed_threshold: float = 0.20
     ear_blink_frames: int = 3
     closed_seconds: float = 2.0
+    nod_pitch_drop: float = 12.0
+    nod_count: int = 3
+    nod_window_seconds: float = 10.0
+    nodding_alert: bool = True
+    perclos_window_seconds: float = 60.0
+    perclos_min_seconds: float = 20.0
+    perclos_threshold: float = 0.30
+    recovery_seconds: float = 1.5
+
+    def __post_init__(self) -> None:
+        _check(0.0 < self.ear_closed_threshold < 1.0, "ear_closed_threshold must be in (0, 1)")
+        _check(self.closed_seconds > 0, "closed_seconds must be > 0")
+        _check(self.nod_count >= 1, "nod_count must be >= 1")
+        _check(0.0 < self.perclos_threshold <= 1.0, "perclos_threshold must be in (0, 1]")
+        _check(self.recovery_seconds >= 0, "recovery_seconds must be >= 0")
 
 
 @dataclass(frozen=True)
@@ -89,27 +124,49 @@ class DecisionConfig:
     ``state_confirm_frames`` فریم متوالی تکرار شود؛ این کار از
     هشدارهای کاذب نویز لحظه‌ای جلوگیری می‌کند.
 
+    **هشدار ماندگار (Latched)**: پس از فعال شدن، هشدار تا زمانی که
+    راننده رفتارش را اصلاح نکرده (به مدت ``recovery_seconds`` پیوسته
+    رو به جلو نگاه کند) ادامه می‌یابد؛ نگاه لحظه‌ای به جلو هشدار را
+    قطع نمی‌کند.
+
     Attributes:
         state_confirm_frames: تعداد فریم تأیید برای تغییر وضعیت (هیسترزیس).
-        distraction_alert_seconds: مدت حواس‌پرتی پیوسته برای فعال‌شدن هشدار (ثانیه).
+        distraction_alert_seconds: مدت حواس‌پرتی پیوسته (نگاه پایین/بالا،
+            چهره ناپیدا) برای فعال‌شدن هشدار (ثانیه).
+        phone_alert_seconds: مدت استفاده از تلفن همراه برای هشدار (ثانیه).
+        lateral_alert_seconds: مدت نگاه پیوسته به چپ/راست برای هشدار.
+            نگاه کوتاه به آینه و طرفین (۱ تا ۲ ثانیه) وظیفه راننده است،
+            اما نگاه طولانی به اطراف حواس‌پرتی محسوب می‌شود.
+        lateral_alert_enabled: فعال/غیرفعال کردن هشدار چرخش سر به چپ/راست.
         drowsiness_alert: فعال‌سازی هشدار خواب‌آلودگی.
-        alert_cooldown_seconds: حداقل فاصله بین دو هشدار متوالی (ثانیه).
+        recovery_seconds: مدت نگاه پیوسته به جلو برای پایان هشدار حواس‌پرتی.
+        escalation_seconds: اگر هشدار WARNING این مدت ادامه یابد، به
+            CRITICAL ارتقا می‌یابد (بوق شدیدتر).
+        alert_cooldown_seconds: اگر حواس‌پرتی جدید کمتر از این فاصله پس از
+            پایان هشدار قبلی رخ دهد، همان هشدار (همان شناسه) دوباره باز
+            می‌شود؛ هشدار هرگز سرکوب نمی‌شود.
         assumed_fps: نرخ فریم فرضی برای تبدیل فریم به ثانیه هنگامی که
             timestamp واقعی در دسترس نیست.
-        lateral_alert_enabled: هشدار برای چرخش سر به چپ/راست.
-            پیش‌فرض **خاموش**: نگاه به آینه‌ها، گذرها و چپ/راست هنگام
-            پیچ، وظیفه قانونی راننده است و حواس‌پرتی محسوب نمی‌شود؛
-            این وضعیت‌ها تنها برچسب اطلاع‌رسانی (INFO) می‌گیرند و هرگز
-            هشدار WARNING صادر نمی‌کنند. برای ناوگان‌هایی با سیاست
-            سخت‌گیرانه (پایش دقیق راننده) قابل فعال‌سازی است.
     """
 
     state_confirm_frames: int = 5
     distraction_alert_seconds: float = 2.0
+    phone_alert_seconds: float = 1.0
+    lateral_alert_seconds: float = 5.0
+    lateral_alert_enabled: bool = True
     drowsiness_alert: bool = True
+    recovery_seconds: float = 1.0
+    escalation_seconds: float = 6.0
     alert_cooldown_seconds: float = 3.0
     assumed_fps: float = 30.0
-    lateral_alert_enabled: bool = False
+
+    def __post_init__(self) -> None:
+        _check(self.state_confirm_frames >= 1, "state_confirm_frames must be >= 1")
+        for name in ("distraction_alert_seconds", "phone_alert_seconds",
+                     "lateral_alert_seconds", "recovery_seconds",
+                     "alert_cooldown_seconds"):
+            _check(getattr(self, name) >= 0, f"{name} must be >= 0")
+        _check(self.escalation_seconds > 0, "escalation_seconds must be > 0")
 
 
 @dataclass(frozen=True)
@@ -180,6 +237,50 @@ class PhoneConfig:
     hold_frames: int = 15
     process_width: int = 480
 
+    def __post_init__(self) -> None:
+        _check(self.detect_every >= 1, "phone.detect_every must be >= 1")
+        _check(self.hold_frames >= 0, "phone.hold_frames must be >= 0")
+        _check(self.input_size % 32 == 0, "phone.input_size must be a multiple of 32")
+
+
+@dataclass(frozen=True)
+class AlertConfig:
+    """پارامترهای هشدار صوتی (آژیر + هشدار گفتاری فارسی).
+
+    Attributes:
+        sound_enabled: فعال‌سازی صدا.
+        warning_frequency: فرکانس پایه آژیر هشدار حواس‌پرتی (هرتز).
+        critical_frequency: فرکانس پایه آژیر هشدار بحرانی (هرتز).
+        warning_interval: فاصله تکرار آژیر WARNING (ثانیه).
+        critical_interval: فاصله تکرار آژیر CRITICAL (ثانیه).
+        beep_ms: طول هر آژیر (میلی‌ثانیه).
+        volume: بلندی آژیر و گفتار (0..1؛ 1 = حداکثر، محدود به ولوم سیستم).
+        voice_enabled: پخش هشدار گفتاری (مثلاً «لطفاً به جلو و جاده نگاه کنید»).
+        voice_dir: پوشه فایل‌های WAV گفتاری (``scripts/generate_voice.py``).
+        voice_repeat_seconds: فاصله تکرار جمله گفتاری تا وقتی هشدار فعال است.
+        voice_on_clear: پخش پیام «متشکرم» پس از اصلاح رفتار راننده.
+    """
+
+    sound_enabled: bool = True
+    warning_frequency: int = 1200
+    critical_frequency: int = 1800
+    warning_interval: float = 1.0
+    critical_interval: float = 0.5
+    beep_ms: int = 350
+    volume: float = 1.0
+    voice_enabled: bool = True
+    voice_dir: str = "assets/voice"
+    voice_repeat_seconds: float = 5.0
+    voice_on_clear: bool = True
+
+    def __post_init__(self) -> None:
+        for name in ("warning_frequency", "critical_frequency"):
+            _check(37 <= getattr(self, name) <= 32767, f"alert.{name} must be in 37..32767 Hz")
+        _check(self.warning_interval > 0 and self.critical_interval > 0,
+               "alert intervals must be > 0")
+        _check(0.0 <= self.volume <= 1.0, "alert.volume must be in [0, 1]")
+        _check(self.voice_repeat_seconds > 0, "alert.voice_repeat_seconds must be > 0")
+
 
 @dataclass(frozen=True)
 class DMSConfig:
@@ -192,6 +293,7 @@ class DMSConfig:
     smoothing: SmoothingConfig = field(default_factory=SmoothingConfig)
     telemetry: TelemetryConfig = field(default_factory=TelemetryConfig)
     phone: PhoneConfig = field(default_factory=PhoneConfig)
+    alert: AlertConfig = field(default_factory=AlertConfig)
     target_fps: int = 30
 
     @classmethod
@@ -215,16 +317,35 @@ class DMSConfig:
         Raises:
             FileNotFoundError: اگر فایل وجود نداشته باشد.
             json.JSONDecodeError: اگر فایل JSON معتبر نباشد.
+            ConfigError: اگر کلید ناشناخته یا مقدار نامعتبر باشد.
         """
         raw = json.loads(Path(path).read_text(encoding="utf-8"))
+        return cls.from_dict(raw)
+
+    @classmethod
+    def from_dict(cls, raw: dict) -> "DMSConfig":
+        """ساخت پیکربندی از دیکشنری (کلیدهای غایب = مقدار پیش‌فرض).
+
+        برخلاف نسخه قبل، کلید ناشناخته (مثلاً غلط املایی) دیگر بی‌صدا
+        نادیده گرفته نمی‌شود و :class:`ConfigError` با نام کلید می‌دهد.
+        """
+        if not isinstance(raw, dict):
+            raise ConfigError("config root must be a JSON object")
         cfg = cls()
-        valid = {f.name: f.type for f in fields(cls)}
+        valid = {f.name for f in fields(cls)}
         updates = {}
         for key, value in raw.items():
             if key not in valid:
-                continue
+                raise ConfigError(f"unknown config section: {key!r}")
             sub = getattr(cfg, key)
             if hasattr(sub, "__dataclass_fields__"):
+                if not isinstance(value, dict):
+                    raise ConfigError(f"section {key!r} must be an object")
+                sub_fields = {f.name for f in fields(sub)}
+                unknown = set(value) - sub_fields
+                if unknown:
+                    raise ConfigError(
+                        f"unknown keys in {key!r}: {', '.join(sorted(unknown))}")
                 updates[key] = type(sub)(**{**asdict(sub), **value})
             else:
                 updates[key] = value

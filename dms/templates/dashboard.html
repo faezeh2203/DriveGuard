@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>درایوگارد — پایش راننده</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
+</head>
+<body>
+
+<header class="bar">
+  <div class="mark">
+    <strong>درایوگارد</strong>
+    <span>پایش حواس‌پرتی و خواب‌آلودگی راننده</span>
+  </div>
+  <nav class="tools">
+    <span class="link" id="conn"><i class="dot"></i><span>در حال اتصال</span></span>
+    <button class="link" id="soundBtn" type="button" aria-pressed="false">صدای مرورگر: خاموش</button>
+    <span class="link">گزارش:
+      <a href="/api/export/json" download>JSON</a> ·
+      <a href="/api/export/csv" download>CSV</a>
+    </span>
+  </nav>
+</header>
+
+<section class="status" id="status" data-level="NONE" role="alert" aria-live="assertive">
+  <div class="status-main">
+    <div class="status-label" id="statusLabel">وضعیت</div>
+    <div class="status-title" id="statusTitle">در انتظار تصویر</div>
+    <div class="status-msg" id="statusMsg"></div>
+  </div>
+  <div class="status-clock" id="statusClock"></div>
+  <div class="meter" id="meter" hidden><span id="meterFill"></span></div>
+</section>
+
+<main class="frame">
+  <section class="cell video">
+    <header class="cell-head">
+      <h2>دوربین راننده</h2>
+      <span class="dim" id="sessionId">{{ session_id }}</span>
+    </header>
+    <div class="screen"><img id="video" src="/video_feed" alt="تصویر زنده دوربین راننده"></div>
+  </section>
+
+  <section class="cell readouts">
+    <header class="cell-head"><h2>نشانگرها</h2><span class="dim" id="stateName">—</span></header>
+
+    <div class="group">
+      <h3>سر</h3>
+      <div class="gauge"><span class="g-name">چرخش افقی</span><span class="g-track"><i id="yawNeedle"></i></span><span class="g-val" id="yaw">—</span></div>
+      <div class="gauge"><span class="g-name">شیب عمودی</span><span class="g-track"><i id="pitchNeedle"></i></span><span class="g-val" id="pitch">—</span></div>
+      <div class="gauge"><span class="g-name">کج‌شدگی</span><span class="g-track"><i id="rollNeedle"></i></span><span class="g-val" id="roll">—</span></div>
+    </div>
+
+    <div class="group">
+      <h3>چشم</h3>
+      <dl class="rows">
+        <dt>باز بودن (EAR)</dt><dd id="ear">—</dd>
+        <dt>PERCLOS</dt><dd id="perclos">—</dd>
+        <dt>پلک زدن</dt><dd id="blinks">—</dd>
+      </dl>
+    </div>
+
+    <div class="group">
+      <h3>تشخیص</h3>
+      <dl class="rows">
+        <dt>چهره</dt><dd id="flagFace">—</dd>
+        <dt>تلفن همراه</dt><dd id="flagPhone">—</dd>
+        <dt>چشم‌ها</dt><dd id="flagEyes">—</dd>
+      </dl>
+    </div>
+
+    <div class="group">
+      <h3>سامانه</h3>
+      <dl class="rows">
+        <dt>نرخ فریم</dt><dd id="fps">—</dd>
+        <dt>تأخیر پردازش</dt><dd id="latency">—</dd>
+        <dt>هشدارهای این جلسه</dt><dd id="alertCount">—</dd>
+        <dt>مدت جلسه</dt><dd id="uptime">—</dd>
+      </dl>
+    </div>
+  </section>
+
+  <section class="cell chart">
+    <header class="cell-head">
+      <h2>زاویه سر، ۳۰ ثانیه اخیر</h2>
+      <span class="dim">بازه‌های هشدار هاشور خورده‌اند</span>
+    </header>
+    <canvas id="chart" height="200" aria-label="نمودار زاویه سر"></canvas>
+  </section>
+
+  <section class="cell log">
+    <header class="cell-head"><h2>رخدادها</h2></header>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>زمان</th><th>رخداد</th><th>علت</th><th>مدت</th></tr></thead>
+        <tbody id="log"><tr class="empty"><td colspan="4">رخدادی ثبت نشده</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<script src="{{ url_for('static', filename='dashboard.js') }}"></script>
+</body>
+</html>

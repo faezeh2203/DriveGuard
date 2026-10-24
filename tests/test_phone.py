@@ -152,16 +152,17 @@ class TestPhoneDisabled:
             p.close()
 
     def test_enabled_but_model_missing_warns_only(self, config, fake_detector,
-                                                  capsys):
+                                                  caplog):
         from dms.pipeline import DMSPipeline
 
-        # مدل واقعی وجود ندارد؛ باید فقط پیام چاپ شود و پایپ‌لاین بالا بیاید
+        # مدل واقعی وجود ندارد؛ باید فقط هشدار لاگ شود و پایپ‌لاین بالا بیاید
+        import logging
+        caplog.set_level(logging.WARNING, logger="dms.pipeline")
         config = _use_missing_model(config)
         p = DMSPipeline(config=config, detector=fake_detector,
                         enable_sound=False)
         try:
-            out = capsys.readouterr().out
-            assert "phone detection disabled" in out
+            assert "phone detection disabled" in caplog.text
             result, _ = run_frames(p, fake_detector, 8)
             assert result.decision.stable_state is AttentionState.FORWARD
         finally:

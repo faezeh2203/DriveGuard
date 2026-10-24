@@ -8,7 +8,7 @@
 سیستم از تصویر دوربین، وضعیت سر راننده را تخمین می‌زند (Yaw/Pitch/Roll)،
 وضعیت توجه او را طبقه‌بندی می‌کند (رو به جلو، چپ، راست، پایین/موبایل،
 بدون چهره)، خواب‌آلودگی را از روی بسته بودن چشم‌ها تشخیص می‌دهد و در
-صورت حواس‌پرتی پایدار **هشدار** صادر می‌کند. تمام رخدادها در SQLite ثبت
+صورت حواس‌پرتی پایدار **هشدار** صادر می‌کند؛ هشدار تا زمانی که راننده رفتارش را اصلاح نکند ادامه دارد. تمام رخدادها در SQLite ثبت
 و به صورت JSON/CSV قابل خروجی‌گیری هستند.
 
 ---
@@ -25,8 +25,10 @@
 | ترکیب جهت نگاه | تخمین Gaze از عنبیه در حالت‌های مرزی |
 | هیسترزیس | تغییر وضعیت تنها پس از N فریم متوالی (کاهش False Alarm) |
 | تشخیص خواب‌آلودگی | Eye Aspect Ratio (EAR) + الگوی سر تکان دادن (Head Nodding) |
-| موتور تصمیم | آستانه زمانی حواس‌پرتی + Cooldown هشدار |
-| هشدار | تصویری (قاب رنگی) و صوتی (Beep) |
+| موتور تصمیم | تایمر پیوسته حواس‌پرتی، آستانه جدا برای موبایل (۱s)، نگاه پایین/چهره ناپیدا (۲s) و نگاه طولانی به اطراف (۵s) |
+| **هشدار ماندگار** | هشدار تا اصلاح رفتار راننده (۱ ثانیه نگاه پیوسته به جلو / ۱.۵ ثانیه چشم باز) ادامه دارد و پس از ۶ ثانیه به CRITICAL ارتقا می‌یابد |
+| هشدار | HUD تصویری (بنر چشمک‌زن، نوار پیشرفت) و بوق تکرارشونده غیرمسدودکننده در Thread جدا |
+| خواب‌آلودگی پیشرفته | EAR + Head Nodding + **PERCLOS** (درصد زمان بسته بودن چشم) |
 | Telemetry | ثبت هر فریم و رخدادها در SQLite، خروجی JSON/CSV |
 | داشبورد وب | Flask: وضعیت زنده، نمودار تاریخچه، جریان تصویر MJPEG |
 | متریک‌های ارزیابی | Accuracy، F1-score، False Positive Rate، Latency |
@@ -70,7 +72,7 @@ python -m dms.main --source video.mp4 --no-display --no-sound
 ## تست‌ها
 
 ```bash
-# اجرای کل مجموعه (۱۸۴ تست، پوشش کد ≈ ۹۱٪)
+# اجرای کل مجموعه (۲۲۵ تست)
 python -m pytest tests/ -v
 
 # با گزارش پوشش
@@ -109,13 +111,14 @@ F1 = 1.00، FPR = 0.00، میانگین خطای زاویه = 0.000°**
 │   ├── attention.py        طبقه‌بندی وضعیت توجه
 │   ├── phone_detector.py   شناسایی تلفن همراه (YOLO11n ONNX)
 │   ├── drowsiness.py       تشخیص خواب‌آلودگی (EAR + Nodding)
-│   ├── decision.py         موتور تصمیم (هیسترزیس + Cooldown)
-│   ├── alerting.py         هشدار تصویری/صوتی
+│   ├── decision.py         موتور تصمیم (هیسترزیس + هشدار ماندگار + ارتقا)
+│   ├── alerting.py         هشدار تصویری (HUD) / صوتی (Thread پس‌زمینه)
+│   ├── templates/, static/ رابط وب داشبورد (HTML/CSS/JS، بدون نیاز به اینترنت)
 │   ├── telemetry.py        SQLite + خروجی JSON/CSV + متریک‌ها
 │   ├── pipeline.py         ارکستراتور پایپ‌لاین
 │   ├── dashboard.py        داشبورد وب Flask
 │   └── main.py             نقطه ورود CLI
-├── tests/                  ۱۸۴ تست pytest (پوشش ≈ ۹۱٪)
+├── tests/                  ۲۲۵ تست pytest
 ├── scripts/                دانلود مدل، ارزیابی مصنوعی و ویدیویی
 ├── docs/                   مستندات فنی و گزارش پروژه
 ├── assets/                 مدل face_landmarker.task
@@ -153,3 +156,8 @@ python -m dms.main --source 0 --config my_config.json
 - Yu et al., *"6DRepNet: Latent Space Nonlinear Regression for Head Pose Estimation"*, CVPR 2023.
 - Soukupová & Čech, *"Real-Time Eye Blink Detection using Facial Landmarks"*, 2016.
 - Zhang et al., *"Facial Landmark Detection via Deep Multi-task Learning"*, 300W-LP / AFLW2000.
+
+
+## تغییرات نسخه ۲
+
+جزئیات کامل در [CHANGELOG.md](CHANGELOG.md).

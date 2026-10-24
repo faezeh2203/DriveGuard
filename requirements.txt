@@ -11,6 +11,12 @@ Flask>=3.0
 pytest>=7.0
 pytest-cov>=4.0
 
-# اختیاری — بهینه‌سازی مدل (Jetson / ONNX)
-# onnxruntime>=1.16
+# تشخیص تلفن همراه (YOLO11n ONNX)
+onnxruntime>=1.16
+
+# اختیاری — فقط برای ساخت دوباره هشدارهای گفتاری (scripts/generate_voice.py)
+# edge-tts>=6.1
+# miniaudio>=1.59
+
+# اختیاری — بهینه‌سازی مدل (Jetson)
 # torch>=2.0

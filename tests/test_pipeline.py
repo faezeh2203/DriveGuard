@@ -107,3 +107,58 @@ class TestKalmanSmoothingIntegration:
         arr = np.array(angles[20:])
         assert arr.std() < 3.0
         assert abs(arr.mean() - 20.0) < 5.0
+
+
+class TestRegressions:
+    """رگرسیون باگ‌های رفع‌شده در نسخه ۲."""
+
+    def test_short_face_loss_is_not_eyes_closed(self, pipeline, fake_detector):
+        # نسخه قبل در گم شدن کوتاه EAR=0 به آشکارساز می‌داد (چشم بسته کاذب)
+        _, ts = run_frames(pipeline, fake_detector, 10)
+        result, _ = run_frames(pipeline, fake_detector, 3, visible=False, start_ms=ts)
+        assert result.drowsiness is not None
+        assert not result.drowsiness.eyes_closed
+        assert result.attention.ear == pytest.approx(0.30, abs=0.05)
+
+    def test_low_fps_face_dropouts_no_false_drowsiness(self, pipeline, fake_detector):
+        # FPS پایین (۴ fps): ۹ فریم بدون چهره ≈ ۲.۲۵ ثانیه
+        ts = 0
+        for _ in range(3):
+            fake_detector.set_state(visible=True)
+            for _ in range(3):
+                pipeline.process(FRAME, ts); ts += 250
+            fake_detector.set_state(visible=False)
+            for _ in range(9):
+                r = pipeline.process(FRAME, ts); ts += 250
+            assert not (r.drowsiness and r.drowsiness.drowsy)
+            assert r.decision.reason.value != "DROWSY"
+
+    def test_alerts_table_only_transitions(self, pipeline, fake_detector):
+        # ۳ ثانیه نگاه به پایین → یک STARTED؛ سپس ۲ ثانیه جلو → یک CLEARED
+        _, ts = run_frames(pipeline, fake_detector, 90, pitch=-25)
+        run_frames(pipeline, fake_detector, 60, start_ms=ts)
+        alerts = pipeline.store.recent_alerts()
+        kinds = [a["kind"] for a in reversed(alerts)]
+        assert kinds == ["STARTED", "CLEARED"]
+        assert alerts[0]["duration"] > 0
+
+    def test_alert_persists_until_driver_recovers(self, pipeline, fake_detector):
+        r, ts = run_frames(pipeline, fake_detector, 90, pitch=-25)
+        assert r.decision.alert_active
+        # ۰.۳ ثانیه نگاه به جلو کافی نیست
+        r, ts = run_frames(pipeline, fake_detector, 9, start_ms=ts)
+        assert r.decision.alert_active
+        r, _ = run_frames(pipeline, fake_detector, 60, start_ms=ts)
+        assert not r.decision.alert_active
+
+    def test_drowsiness_kept_when_face_lost(self, pipeline, fake_detector):
+        # راننده خوابش برده و سرش از کادر خارج شده → هشدار بحرانی ادامه دارد
+        r, ts = run_frames(pipeline, fake_detector, 80, ear=0.12)
+        assert r.decision.reason.value == "DROWSY"
+        r, _ = run_frames(pipeline, fake_detector, 30, visible=False, start_ms=ts)
+        assert r.decision.alert_active
+        assert r.decision.alert_level is AlertLevel.CRITICAL
+
+    def test_close_is_idempotent(self, pipeline):
+        pipeline.close()
+        pipeline.close()

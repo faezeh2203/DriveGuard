@@ -120,3 +120,51 @@ class TestConfigJSON:
         d = cfg.to_dict()
         assert d["head_pose"]["yaw_threshold"] == 25.0
         assert "decision" in d and "telemetry" in d
+
+
+class TestDashboardV2:
+    @pytest.fixture
+    def client(self, tmp_path):
+        from dms.telemetry import TelemetryStore
+        store = TelemetryStore(str(tmp_path / "d.db"), session_id="sess-1")
+        shared = SharedState()
+        dash = Dashboard(shared, store=store)
+        dash.app.config["TESTING"] = True
+        yield dash.app.test_client(), shared, store
+        store.close()
+
+    def test_static_assets_served(self, client):
+        http, _, _ = client
+        assert http.get("/static/dashboard.js").status_code == 200
+        assert http.get("/static/dashboard.css").status_code == 200
+
+    def test_status_has_alert_fields(self, client):
+        http, shared, _ = client
+        shared.publish(make_result())
+        data = http.get("/api/status").get_json()
+        for key in ("alert_active", "reason", "recovery_progress", "perclos",
+                    "phone_detected", "alert_count"):
+            assert key in data
+
+    def test_alerts_endpoint(self, client):
+        from dms.telemetry import AlertRecord
+        http, _, store = client
+        store.log_alert(AlertRecord("sess-1", 1, AlertLevel.WARNING, "PHONE",
+                                    "msg", 1.0, kind="STARTED", reason="PHONE"))
+        rows = http.get("/api/alerts").get_json()
+        assert rows[0]["reason"] == "PHONE"
+
+    def test_export(self, client):
+        http, _, _ = client
+        resp = http.get("/api/export/json")
+        assert resp.status_code == 200
+        assert http.get("/api/export/xml").status_code == 404
+
+    def test_summary(self, client):
+        http, _, _ = client
+        data = http.get("/api/summary").get_json()
+        assert data["session_id"] == "sess-1"
+
+    def test_cli_new_flags(self):
+        args = parse_args(["--host", "0.0.0.0", "--export", "--log-level", "DEBUG"])
+        assert args.host == "0.0.0.0" and args.export and args.log_level == "DEBUG"

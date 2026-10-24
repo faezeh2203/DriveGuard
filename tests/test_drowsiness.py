@@ -56,13 +56,29 @@ class TestBlinkVsMicrosleep:
         assert r.drowsy
         assert r.closed_duration >= 2.0
 
-    def test_drowsiness_clears_on_opening(self, det):
+    def test_drowsiness_latched_until_recovery(self, det):
+        # باز شدن لحظه‌ای چشم هشدار را قطع نمی‌کند (ماندگاری)
         t = 0.0
         for _ in range(70):
             r = det.update(0.15, 0, t); t += 1 / 30
+        assert r.drowsy and r.reason == "eyes_closed"
+        r = det.update(0.30, 0, t); t += 1 / 30
         assert r.drowsy
-        r = det.update(0.30, 0, t)
+        # باز ماندن پیوسته بیش از recovery_seconds (۱.۵s) → پایان
+        for _ in range(50):
+            r = det.update(0.30, 0, t); t += 1 / 30
         assert not r.drowsy
+
+    def test_reclosing_resets_recovery(self, det):
+        t = 0.0
+        for _ in range(70):
+            det.update(0.15, 0, t); t += 1 / 30
+        for _ in range(30):  # ۱ ثانیه باز
+            det.update(0.30, 0, t); t += 1 / 30
+        det.update(0.15, 0, t); t += 1 / 30  # دوباره بسته
+        for _ in range(30):  # ۱ ثانیه باز — هنوز کافی نیست
+            r = det.update(0.30, 0, t); t += 1 / 30
+        assert r.drowsy
 
     def test_closed_duration_accumulates(self, det):
         t = 0.0
@@ -98,6 +114,22 @@ class TestHeadNodding:
         r = det.update(0.3, 0, t)
         assert r.nodding
 
+    def test_nodding_triggers_drowsiness(self, det):
+        t = 0.0
+        for i in range(3):
+            t = self._nod(det, t)
+        r = det.update(0.3, 0, t)
+        assert r.nodding
+        assert r.drowsy and r.reason == "nodding"
+
+    def test_nodding_alert_can_be_disabled(self):
+        det = DrowsinessDetector(DrowsinessConfig(nodding_alert=False))
+        t = 0.0
+        for i in range(4):
+            t = self._nod(det, t)
+        r = det.update(0.3, 0, t)
+        assert r.nodding and not r.drowsy
+
     def test_nods_expire_from_window(self, det):
         t = 0.0
         for i in range(4):
@@ -106,6 +138,36 @@ class TestHeadNodding:
         t += 11.0
         r = det.update(0.3, 0, t)
         assert not r.nodding
+
+
+class TestPerclos:
+    """PERCLOS: درصد زمان بسته بودن چشم در پنجره لغزان."""
+
+    def test_perclos_measured(self, det):
+        # الگوی ۲۰٪ بسته (۶ از ۳۰ فریم، کوتاه‌تر از microsleep)
+        t = 0.0
+        for _ in range(30):
+            for i in range(30):
+                r = det.update(0.15 if i < 6 else 0.30, 0, t); t += 1 / 30
+        assert r.perclos == pytest.approx(0.2, abs=0.03)
+        assert not r.drowsy
+
+    def test_high_perclos_triggers(self, det):
+        # ۴۰٪ زمان بسته (پلک‌های کند و طولانی) به مدت ۳۰ ثانیه
+        t = 0.0
+        r = None
+        for _ in range(30):
+            for i in range(30):
+                r = det.update(0.15 if i < 12 else 0.30, 0, t); t += 1 / 30
+        assert r.perclos > 0.3
+        assert r.drowsy
+
+    def test_perclos_needs_min_data(self, det):
+        t = 0.0
+        for _ in range(5):
+            for i in range(30):
+                r = det.update(0.15 if i < 15 else 0.30, 0, t); t += 1 / 30
+        assert not r.drowsy  # کمتر از perclos_min_seconds داده
 
 
 class TestReset:

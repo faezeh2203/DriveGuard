@@ -37,6 +37,9 @@ python -m dms.main --source rtsp://camera/stream --no-display
 | `--port` | پورت داشبورد (پیش‌فرض 5000) |
 | `--no-display` | بدون پنجره OpenCV |
 | `--no-sound` | بدون هشدار صوتی |
+| `--host` | آدرس داشبورد (`0.0.0.0` برای دسترسی از تبلت/گوشی در شبکه) |
+| `--export` | ذخیره گزارش JSON/CSV جلسه در پایان |
+| `--log-level` | سطح لاگ (`DEBUG`/`INFO`/`WARNING`/`ERROR`) |
 
 ## ۲. استفاده به‌عنوان کتابخانه
 
@@ -153,9 +156,11 @@ metrics = evaluate(y_true=["FORWARD", "LEFT", "FORWARD"],
 ### `dms.decision`
 - `AlertLevel` — NONE / INFO / WARNING / CRITICAL با مقایسه شدت.
 - `DecisionEngine(config)` — هیسترزیس + آستانه زمانی حواس‌پرتی +
-  Cooldown + ثبت دوره‌های حواس‌پرتی (`episodes`)؛ **سیاست پیش‌فرض:**
-  چرخش سر چپ/راست (آینه/پیچ) فقط INFO — هشدار برای DOWN، PHONE و
-  NO_FACE؛ گزینه `lateral_alert_enabled=True` حالت سخت‌گیرانه.
+  هشدار ماندگار + ارتقا + ثبت دوره‌های حواس‌پرتی (`episodes`)؛ آستانه‌ها:
+  `phone_alert_seconds=1`، `distraction_alert_seconds=2` (پایین/بالا/چهره
+  ناپیدا)، `lateral_alert_seconds=5` (نگاه به اطراف؛ نگاه کوتاه به آینه مجاز
+  است)؛ هشدار با `recovery_seconds=1` نگاه پیوسته به جلو پایان می‌یابد و پس از
+  `escalation_seconds=6` به CRITICAL ارتقا می‌یابد.
 
 ### `dms.alerting`
 - `AlertManager(enable_sound)` — Beep (winsound/کنسول) و

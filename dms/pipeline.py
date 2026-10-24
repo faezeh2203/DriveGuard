@@ -17,8 +17,10 @@
 
 from __future__ import annotations
 
+import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
@@ -36,6 +38,8 @@ from .smoothing import KalmanFilter1D
 from .telemetry import AlertRecord, FrameRecord, TelemetryStore
 from .tracker import FaceTracker
 
+log = logging.getLogger(__name__)
+
 
 @dataclass
 class FrameResult:
@@ -51,7 +55,10 @@ class FrameResult:
         bbox: جعبه محصور چهره (None اگر دیده نشده).
         latency_ms: کل زمان پردازش فریم (میلی‌ثانیه).
         fps: نرخ فریم لحظه‌ای سیستم.
-        alert_event: رخداد هشدار (None اگر هشدار جدیدی نبود).
+        alert_event: رخداد هشدار (None اگر هشداری فعال نبود).
+        face_seen: آیا چهره در همین فریم تشخیص داده شد.
+        phone_detected: آیا گوشی نزدیک چهره دیده شد.
+        alert_count: تعداد کل هشدارهای جلسه تا این فریم.
     """
 
     frame_id: int
@@ -65,6 +72,8 @@ class FrameResult:
     fps: float
     alert_event: Optional[AlertEvent] = None
     face_seen: bool = False
+    phone_detected: bool = False
+    alert_count: int = 0
 
 
 class DMSPipeline:
@@ -110,12 +119,12 @@ class DMSPipeline:
         self.classifier = AttentionClassifier(self.config.head_pose)
         self.drowsiness_detector = DrowsinessDetector(self.config.drowsiness)
         self.decision_engine = DecisionEngine(self.config.decision)
-        self.alert_manager = AlertManager(enable_sound=enable_sound)
+        self.alert_manager = AlertManager(enable_sound=enable_sound,
+                                          config=self.config.alert)
 
         # --- تشخیص تلفن همراه (اختیاری؛ در نبود مدل غیرفعال می‌شود) ---
         self.phone_detector = phone_detector
         if self.phone_detector is None and self.config.phone.enabled:
-            from pathlib import Path
             if Path(self.config.phone.model_path).exists():
                 try:
                     self.phone_detector = PhoneDetector(
@@ -127,11 +136,11 @@ class DMSPipeline:
                         process_width=self.config.phone.process_width,
                     )
                 except Exception as exc:  # noqa: BLE001
-                    print(f"[DMS] phone detection disabled: {exc}")
+                    log.warning("phone detection disabled: %s", exc)
             else:
-                print(f"[DMS] phone detection disabled: model not found "
-                      f"({self.config.phone.model_path}) — "
-                      "run scripts/download_model.py")
+                log.warning("phone detection disabled: model not found (%s) — "
+                            "run scripts/download_model.py",
+                            self.config.phone.model_path)
         self._phones_last: list = []
         self._phone_hold = 0  # فریم‌های باقی‌مانده نگهداری آخرین نتیجه
 
@@ -147,6 +156,8 @@ class DMSPipeline:
         self._last_ts: Optional[float] = None
         self._fps = float(self.config.target_fps)
         self._lost_run = 0  # تعداد فریم‌های متوالی بدون چهره
+        self._last_ear: Optional[float] = None
+        self._closed = False
         self.session_id = self.store.session_id
 
     # ------------------------------------------------------------------
@@ -179,14 +190,21 @@ class DMSPipeline:
             self._lost_run += 1
         track = self.tracker.update(
             observation.bbox if observation is not None else None, dt)
+        # جعبه چهره برای تشخیص گوشی: تشخیص فعلی، یا موقعیت ردیابی‌شده هنگام
+        # گم شدن کوتاه (گوشی کنار گوش اغلب بخشی از چهره را می‌پوشاند)
+        face_bbox = None
+        if observation is not None:
+            face_bbox = observation.bbox
+        elif self.tracker.is_tracking:
+            face_bbox = track.bbox
 
         result = self._process_observation(
             observation, self._lost_run, ts, dt, frame_bgr.shape, t0,
-            frame_bgr, timestamp_ms)
+            frame_bgr, timestamp_ms, face_bbox)
         return result
 
     # ------------------------------------------------------------------
-    def _detect_phone(self, frame_bgr: np.ndarray, timestamp_ms: int,
+    def _detect_phone(self, frame_bgr: np.ndarray | None, timestamp_ms: int,
                       face_bbox: tuple | None) -> bool:
         """اجرای تشخیص گوشی با بازه‌گذاری و نگهداری نتیجه.
 
@@ -194,7 +212,7 @@ class DMSPipeline:
         (نزدیک بودن گوشی به چهره) تا ``hold_frames`` فریم نگه داشته
         می‌شود تا هیسترزیس وضعیت بین دو اجرا نشکند.
         """
-        if self.phone_detector is None or face_bbox is None:
+        if self.phone_detector is None or face_bbox is None or frame_bgr is None:
             return False
         # فریم اول بلافاصله بررسی می‌شود و سپس هر detect_every فریم
         if (self._frame_counter - 1) % self.config.phone.detect_every == 0:
@@ -220,22 +238,32 @@ class DMSPipeline:
                              ts: float, dt: float, shape,
                              t0: float,
                              frame_bgr: np.ndarray | None = None,
-                             timestamp_ms: int = 0) -> FrameResult:
+                             timestamp_ms: int = 0,
+                             face_bbox: tuple | None = None) -> FrameResult:
         """ادامه زنجیره پردازش پس از مرحله تشخیص."""
         if observation is None and lost_frames >= self.config.detection.max_lost_frames:
-            # چهره واقعاً گم شده: حالت NO_FACE و بازنشانی فیلترها
+            # چهره واقعاً گم شده: حالت NO_FACE و بازنشانی فیلترها.
+            # آخرین وضعیت خواب‌آلودگی حفظ می‌شود: راننده‌ای که خوابش برده و
+            # سرش از کادر افتاده نباید هشدار بحرانی‌اش قطع شود.
             angles = EulerAngle(0.0, 0.0, 0.0)
             for kf in self._kfs.values():
                 kf.reset()
             self.pose_estimator.reset()
             attention = AttentionResult(
                 raw_state=AttentionState.NO_FACE, state=AttentionState.NO_FACE)
-            drowsy = None
+            drowsy = self.drowsiness_detector.last_result
         elif observation is None:
-            # گم شدن کوتاه: آخرین زوایا نگه داشته می‌شود (رفع نویز)
+            # گم شدن کوتاه: آخرین زوایا نگه داشته می‌شود (رفع نویز).
+            # EAR بدون لندمارک قابل اندازه‌گیری نیست (۰ برمی‌گردد)؛ تغذیه آن
+            # به آشکارساز، «چشم بسته» کاذب و در FPS پایین هشدار خواب‌آلودگی
+            # کاذب می‌ساخت — پس آخرین نتیجه آشکارساز نگه داشته می‌شود.
             angles = self._smoothed_angles()
             attention = self.classifier.classify(angles, None)
-            drowsy = self.drowsiness_detector.update(attention.ear, angles.pitch, ts)
+            drowsy = self.drowsiness_detector.last_result
+            if self._last_ear is not None:
+                attention = AttentionResult(
+                    raw_state=attention.raw_state, state=attention.state,
+                    gaze_offset=attention.gaze_offset, ear=self._last_ear)
         else:
             pose: HeadPose = self.pose_estimator.estimate(
                 observation.model_points_2d(), (shape[1], shape[0]))
@@ -246,10 +274,11 @@ class DMSPipeline:
             attention = self.classifier.classify(angles, observation.landmarks)
             drowsy = self.drowsiness_detector.update(
                 attention.ear, angles.pitch, ts)
+            self._last_ear = attention.ear
 
         # --- تزریق وضعیت تلفن همراه (گوشی نزدیک چهره) ---
-        if observation is not None and self._detect_phone(
-                frame_bgr, timestamp_ms, observation.bbox):
+        phone = self._detect_phone(frame_bgr, timestamp_ms, face_bbox)
+        if phone:
             attention = AttentionResult(
                 raw_state=attention.raw_state,
                 state=AttentionState.PHONE,
@@ -276,6 +305,8 @@ class DMSPipeline:
             fps=self._fps,
             alert_event=alert_event,
             face_seen=observation is not None,
+            phone_detected=phone,
+            alert_count=self.decision_engine.alert_count,
         )
 
     # ------------------------------------------------------------------
@@ -316,10 +347,12 @@ class DMSPipeline:
         )
         try:
             self.store.log_frame(record)
-        except Exception:
+        except Exception:  # noqa: BLE001
             # خطای پایگاه‌داده هرگز نباید پردازش زنده را متوقف کند
-            pass
-        if alert_event is not None:
+            log.exception("telemetry: failed to log frame")
+        # فقط تغییر وضعیت هشدار (شروع/ارتقا/تغییر علت/پایان) ثبت می‌شود؛
+        # نسخه قبل در هر فریم یک رکورد می‌نوشت و جدول را پر می‌کرد.
+        if alert_event is not None and alert_event.is_transition:
             try:
                 self.store.log_alert(AlertRecord(
                     session_id=self.session_id,
@@ -328,13 +361,20 @@ class DMSPipeline:
                     state=alert_event.state,
                     message=alert_event.message,
                     ts=ts,
+                    kind=alert_event.kind,
+                    reason=alert_event.reason,
+                    duration=alert_event.duration,
                 ))
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                log.exception("telemetry: failed to log alert")
 
     # ------------------------------------------------------------------
     def close(self) -> None:
-        """بستن منابع (تشخیص‌دهنده‌ها و پایگاه‌داده)."""
+        """بستن منابع (تشخیص‌دهنده‌ها، صدا و پایگاه‌داده)؛ تکرار آن بی‌خطر است."""
+        if self._closed:
+            return
+        self._closed = True
+        self.alert_manager.close()
         if self.detector is not None:
             self.detector.close()
         if self.phone_detector is not None:

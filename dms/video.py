@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass
 from typing import Optional
@@ -24,6 +25,8 @@ import cv2
 import numpy as np
 
 DEFAULT_FPS = 30.0
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -58,6 +61,9 @@ class VideoSource:
         IOError: اگر باز کردن منبع ناموفق باشد.
     """
 
+    #: تعداد تلاش برای اتصال مجدد منبع زنده پس از قطع شدن
+    MAX_RECONNECTS = 5
+
     def __init__(self, source, target_fps: float = DEFAULT_FPS) -> None:
         self.source = source
         self._cap = cv2.VideoCapture(source)
@@ -65,6 +71,28 @@ class VideoSource:
             raise IOError(f"cannot open video source: {source!r}")
         reported = self._cap.get(cv2.CAP_PROP_FPS)
         self.fps = reported if reported and reported > 1.0 else target_fps
+        self._t0 = time.monotonic()
+        self._live_frames = 0
+
+    @property
+    def is_live(self) -> bool:
+        """True برای وبکم و جریان شبکه (در مقابل فایل ویدیو)."""
+        if isinstance(self.source, int):
+            return True
+        return str(self.source).lower().startswith(("rtsp://", "rtmp://", "http://", "https://"))
+
+    def _reconnect(self) -> bool:
+        """تلاش برای باز کردن دوباره منبع زنده (قطع لحظه‌ای USB/شبکه)."""
+        for attempt in range(1, self.MAX_RECONNECTS + 1):
+            log.warning("video source lost — reconnecting (%d/%d)", attempt, self.MAX_RECONNECTS)
+            self._cap.release()
+            time.sleep(min(0.5 * attempt, 2.0))
+            self._cap = cv2.VideoCapture(self.source)
+            if self._cap.isOpened():
+                ok, _ = self._cap.read()
+                if ok:
+                    return True
+        return False
 
     @property
     def frame_size(self) -> tuple:
@@ -80,11 +108,19 @@ class VideoSource:
             شیء :class:`Frame` یا ``None`` در پایان جریان/خطا.
         """
         ok, image = self._cap.read()
+        if (not ok or image is None) and self.is_live and self._reconnect():
+            ok, image = self._cap.read()
         if not ok or image is None:
             return None
-        frame_id = int(self._cap.get(cv2.CAP_PROP_POS_FRAMES))
-        # برای وبکم شمارنده POS_FRAMES معتبر نیست؛ از ساعت سیستم استفاده می‌کنیم
-        timestamp = time.monotonic() if isinstance(self.source, int) else frame_id / self.fps
+        if self.is_live:
+            # برای منبع زنده شمارنده POS_FRAMES معتبر نیست؛ از ساعت یکنوای
+            # سیستم (نسبت به شروع) استفاده می‌شود
+            self._live_frames += 1
+            frame_id = self._live_frames
+            timestamp = time.monotonic() - self._t0
+        else:
+            frame_id = int(self._cap.get(cv2.CAP_PROP_POS_FRAMES))
+            timestamp = frame_id / self.fps
         return Frame(image=image, timestamp=timestamp, frame_id=frame_id)
 
     def release(self) -> None:

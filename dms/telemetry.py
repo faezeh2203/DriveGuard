@@ -17,6 +17,7 @@ from __future__ import annotations
 import csv
 import json
 import sqlite3
+import threading
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -51,9 +52,21 @@ CREATE TABLE IF NOT EXISTS alerts (
     level        TEXT NOT NULL,
     state        TEXT NOT NULL,
     message      TEXT NOT NULL,
-    ts           REAL NOT NULL
+    ts           REAL NOT NULL,
+    kind         TEXT NOT NULL DEFAULT 'STARTED',
+    reason       TEXT NOT NULL DEFAULT '',
+    duration     REAL NOT NULL DEFAULT 0
 );
+CREATE INDEX IF NOT EXISTS idx_frames_session ON frames(session_id, frame_id);
+CREATE INDEX IF NOT EXISTS idx_alerts_session ON alerts(session_id, id);
 """
+
+# ستون‌هایی که در نسخه ۲ به جدول alerts اضافه شدند (مهاجرت پایگاه‌داده قدیمی)
+_ALERT_MIGRATIONS = {
+    "kind": "TEXT NOT NULL DEFAULT 'STARTED'",
+    "reason": "TEXT NOT NULL DEFAULT ''",
+    "duration": "REAL NOT NULL DEFAULT 0",
+}
 
 
 @dataclass(frozen=True)
@@ -84,10 +97,17 @@ class AlertRecord:
     state: str
     message: str
     ts: float
+    kind: str = "STARTED"
+    reason: str = ""
+    duration: float = 0.0
 
 
 class TelemetryStore:
     """ذخیره‌ساز Telemetry روی SQLite با خروجی JSON/CSV.
+
+    ایمن برای استفاده هم‌زمان از چند Thread (حلقه پردازش + داشبورد):
+    همه دسترسی‌ها با یک قفل سریال می‌شوند و حالت WAL فعال است تا
+    خواندن، نوشتن را مسدود نکند.
 
     Args:
         db_path: مسیر فایل پایگاه‌داده (پوشه‌ها در صورت نیاز ساخته می‌شوند).
@@ -102,21 +122,44 @@ class TelemetryStore:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.session_id = session_id or time.strftime("session-%Y%m%d-%H%M%S")
         self.log_every_frame = log_every_frame
-        self._conn = sqlite3.connect(str(self.db_path))
+        self._lock = threading.RLock()
+        self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
+        try:
+            self._conn.execute("PRAGMA journal_mode=WAL")
+            self._conn.execute("PRAGMA synchronous=NORMAL")
+        except sqlite3.DatabaseError:
+            pass  # برخی فایل‌سیستم‌ها WAL را پشتیبانی نمی‌کنند
+        self._migrate()
         self._conn.executescript(_SCHEMA)
         self._conn.commit()
         self._pending = 0  # تعداد رکورد درج‌شده بدون commit (commit دسته‌ای)
+        self._closed = False
+
+    def _migrate(self) -> None:
+        """افزودن ستون‌های جدید به جدول alerts در پایگاه‌داده‌های نسخه قبل."""
+        cols = {row[1] for row in self._conn.execute("PRAGMA table_info(alerts)")}
+        if not cols:
+            return  # جدول هنوز ساخته نشده
+        for name, decl in _ALERT_MIGRATIONS.items():
+            if name not in cols:
+                self._conn.execute(f"ALTER TABLE alerts ADD COLUMN {name} {decl}")
+        self._conn.commit()
 
     def close(self) -> None:
         """ثبت نهایی رکوردهای باقی‌مانده و بستن اتصال."""
-        self.flush()
-        self._conn.close()
+        with self._lock:
+            if self._closed:
+                return
+            self.flush()
+            self._conn.close()
+            self._closed = True
 
     def flush(self) -> None:
         """commit رکوردهای درج‌شده اما ثبت‌نشده."""
-        if self._pending:
-            self._conn.commit()
-            self._pending = 0
+        with self._lock:
+            if self._pending:
+                self._conn.commit()
+                self._pending = 0
 
     def __enter__(self) -> "TelemetryStore":
         return self
@@ -129,6 +172,14 @@ class TelemetryStore:
         """ثبت وضعیت یک فریم (اگر ``log_every_frame`` فعال باشد)."""
         if not self.log_every_frame:
             return
+        with self._lock:
+            self._insert_frame(record)
+            # commit دسته‌ای (هر ۳۰ فریم) برای حفظ نرخ Real-Time
+            self._pending += 1
+            if self._pending >= 30:
+                self.flush()
+
+    def _insert_frame(self, record: FrameRecord) -> None:
         self._conn.execute(
             "INSERT INTO frames (session_id, camera_id, frame_id, ts, fps,"
             " pitch, yaw, roll, state, ear, eyes_closed, drowsy,"
@@ -143,51 +194,68 @@ class TelemetryStore:
                 record.decision.alert_id, record.latency_ms,
             ),
         )
-        # commit دسته‌ای (هر ۱۰ فریم) برای حفظ نرخ Real-Time
-        self._pending += 1
-        if self._pending >= 10:
-            self.flush()
 
     def log_alert(self, record: AlertRecord) -> None:
-        """ثبت یک رخداد هشدار."""
-        self._conn.execute(
-            "INSERT INTO alerts (session_id, alert_id, level, state,"
-            " message, ts) VALUES (?,?,?,?,?,?)",
-            (
-                record.session_id, record.alert_id, record.level.value,
-                record.state, record.message, record.ts,
-            ),
-        )
-        self._conn.commit()
+        """ثبت یک رخداد هشدار (شروع، ارتقا، تغییر علت یا پایان)."""
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO alerts (session_id, alert_id, level, state,"
+                " message, ts, kind, reason, duration)"
+                " VALUES (?,?,?,?,?,?,?,?,?)",
+                (
+                    record.session_id, record.alert_id, record.level.value,
+                    record.state, record.message, record.ts,
+                    record.kind, record.reason, float(record.duration),
+                ),
+            )
+            self._conn.commit()
 
     # ------------------------------------------------------------------
-    def frame_count(self) -> int:
-        self.flush()
-        """تعداد فریم‌های ثبت‌شده در جلسه جاری."""
-        cur = self._conn.execute(
-            "SELECT COUNT(*) FROM frames WHERE session_id = ?",
-            (self.session_id,),
-        )
-        return int(cur.fetchone()[0])
+    def _query(self, sql: str, params: tuple = ()) -> list:
+        with self._lock:
+            self.flush()
+            return self._conn.execute(sql, params).fetchall()
 
-    def alert_count(self) -> int:
-        self.flush()
-        """تعداد هشدارهای ثبت‌شده در جلسه جاری."""
-        cur = self._conn.execute(
-            "SELECT COUNT(*) FROM alerts WHERE session_id = ?",
-            (self.session_id,),
-        )
-        return int(cur.fetchone()[0])
+    def frame_count(self) -> int:
+        """تعداد فریم‌های ثبت‌شده در جلسه جاری."""
+        rows = self._query("SELECT COUNT(*) FROM frames WHERE session_id = ?",
+                           (self.session_id,))
+        return int(rows[0][0])
+
+    def alert_count(self, kind: str | None = None) -> int:
+        """تعداد رخدادهای هشدار ثبت‌شده در جلسه جاری.
+
+        Args:
+            kind: فیلتر نوع رخداد (مثلاً ``"STARTED"`` برای تعداد هشدارهای مجزا).
+        """
+        if kind is None:
+            rows = self._query("SELECT COUNT(*) FROM alerts WHERE session_id = ?",
+                               (self.session_id,))
+        else:
+            rows = self._query(
+                "SELECT COUNT(*) FROM alerts WHERE session_id = ? AND kind = ?",
+                (self.session_id, kind))
+        return int(rows[0][0])
+
+    def recent_alerts(self, limit: int = 20) -> list[dict]:
+        """آخرین رخدادهای هشدار جلسه جاری (جدیدترین اول)."""
+        rows = self._query(
+            "SELECT alert_id, level, state, message, ts, kind, reason, duration"
+            " FROM alerts WHERE session_id = ? ORDER BY id DESC LIMIT ?",
+            (self.session_id, int(limit)))
+        return [
+            {"alert_id": r[0], "level": r[1], "state": r[2], "message": r[3],
+             "ts": r[4], "kind": r[5], "reason": r[6], "duration": r[7]}
+            for r in rows
+        ]
 
     def state_summary(self) -> dict:
-        self.flush()
         """توزیع وضعیت‌های توجه (شمارش بر حسب وضعیت)."""
-        cur = self._conn.execute(
+        rows = self._query(
             "SELECT state, COUNT(*) FROM frames WHERE session_id = ?"
             " GROUP BY state ORDER BY COUNT(*) DESC",
-            (self.session_id,),
-        )
-        return {state: int(count) for state, count in cur.fetchall()}
+            (self.session_id,))
+        return {state: int(count) for state, count in rows}
 
     def export_json(self, path: str | Path) -> Path:
         """خروجی جلسه به صورت JSON (فریم‌ها + هشدارها + خلاصه).
@@ -200,7 +268,6 @@ class TelemetryStore:
         """
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        self.flush()
         frames = [
             {
                 "frame_id": r[0], "ts": r[1], "fps": r[2],
@@ -208,7 +275,7 @@ class TelemetryStore:
                 "state": r[6], "ear": r[7], "drowsy": bool(r[8]),
                 "alert_level": r[9], "latency_ms": r[10],
             }
-            for r in self._conn.execute(
+            for r in self._query(
                 "SELECT frame_id, ts, fps, pitch, yaw, roll, state, ear,"
                 " drowsy, alert_level, latency_ms FROM frames"
                 " WHERE session_id = ? ORDER BY frame_id",
@@ -217,10 +284,11 @@ class TelemetryStore:
         ]
         alerts = [
             {"alert_id": r[0], "level": r[1], "state": r[2],
-             "message": r[3], "ts": r[4]}
-            for r in self._conn.execute(
-                "SELECT alert_id, level, state, message, ts FROM alerts"
-                " WHERE session_id = ? ORDER BY id",
+             "message": r[3], "ts": r[4], "kind": r[5], "reason": r[6],
+             "duration": r[7]}
+            for r in self._query(
+                "SELECT alert_id, level, state, message, ts, kind, reason,"
+                " duration FROM alerts WHERE session_id = ? ORDER BY id",
                 (self.session_id,),
             )
         ]
@@ -247,8 +315,7 @@ class TelemetryStore:
         """
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        self.flush()
-        rows = self._conn.execute(
+        rows = self._query(
             "SELECT frame_id, ts, fps, pitch, yaw, roll, state, ear,"
             " eyes_closed, drowsy, alert_level, alert_id, latency_ms"
             " FROM frames WHERE session_id = ? ORDER BY frame_id",
@@ -328,7 +395,13 @@ def f1_score(y_true: Sequence[str], y_pred: Sequence[str],
 
 def false_positive_rate(y_true: Sequence[str], y_pred: Sequence[str],
                         positive: str = "FORWARD") -> float:
-    """نرخ هشدار کاذب — نسبت نمونه‌های منفیِ واقعی که مثبت پیش‌بینی شدند."""
+    """FPR کلاس مثبت — نسبت نمونه‌های منفیِ واقعی که مثبت پیش‌بینی شدند.
+
+    توجه: با ``positive="FORWARD"``، این مقدار نسبت حواس‌پرتی‌های واقعی
+    است که سیستم «رو به جلو» تشخیص داده — یعنی **نرخ از دست دادن
+    حواس‌پرتی** (Miss Rate)، نه هشدار کاذب. برای نرخ هشدار کاذب از
+    :func:`false_alarm_rate` استفاده کنید.
+    """
     c = confusion_counts(y_true, y_pred, positive)
     negatives = c["tn"] + c["fp"]
     if negatives == 0:
@@ -336,15 +409,28 @@ def false_positive_rate(y_true: Sequence[str], y_pred: Sequence[str],
     return c["fp"] / negatives
 
 
+def false_alarm_rate(y_true: Sequence[str], y_pred: Sequence[str],
+                     attentive: str = "FORWARD") -> float:
+    """نرخ هشدار کاذب — نسبت فریم‌هایی که راننده واقعاً رو به جلو بوده
+    اما سیستم حواس‌پرتی تشخیص داده است (معیار آزاردهندگی سیستم)."""
+    c = confusion_counts(y_true, y_pred, attentive)
+    actual_attentive = c["tp"] + c["fn"]
+    if actual_attentive == 0:
+        return 0.0
+    return c["fn"] / actual_attentive
+
+
 def evaluate(y_true: Sequence[str], y_pred: Sequence[str]) -> dict:
     """محاسبه همه متریک‌های الزامی مشخصات پروژه یک‌جا.
 
     Returns:
-        دیکشنری ``accuracy, f1_score, false_positive_rate, counts``.
+        دیکشنری ``accuracy, f1_score, false_positive_rate,
+        false_alarm_rate, counts``.
     """
     return {
         "accuracy": accuracy(y_true, y_pred),
         "f1_score": f1_score(y_true, y_pred),
         "false_positive_rate": false_positive_rate(y_true, y_pred),
+        "false_alarm_rate": false_alarm_rate(y_true, y_pred),
         "counts": confusion_counts(y_true, y_pred),
     }

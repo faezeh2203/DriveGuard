@@ -136,7 +136,8 @@ class TestMetrics:
 
     def test_evaluate_keys(self):
         e = evaluate(self.Y_TRUE, self.Y_PRED)
-        assert set(e) == {"accuracy", "f1_score", "false_positive_rate", "counts"}
+        assert set(e) == {"accuracy", "f1_score", "false_positive_rate",
+                          "false_alarm_rate", "counts"}
 
 
 class TestConfig:
@@ -154,11 +155,26 @@ class TestConfig:
         # مقدار پیش‌فرض دست‌نخورده
         assert cfg.head_pose.pitch_down_threshold == -15.0
 
-    def test_from_json_ignores_unknown_keys(self, tmp_path):
+    def test_from_json_rejects_unknown_section(self, tmp_path):
+        # غلط املایی در پیکربندی ایمنی نباید بی‌صدا نادیده گرفته شود
+        from dms.config import ConfigError
         cfg_file = tmp_path / "cfg.json"
         cfg_file.write_text(json.dumps({"nonexistent": 1}), encoding="utf-8")
-        cfg = DMSConfig.from_json(cfg_file)
-        assert cfg.head_pose.yaw_threshold == 25.0
+        with pytest.raises(ConfigError):
+            DMSConfig.from_json(cfg_file)
+
+    def test_from_json_rejects_unknown_key(self, tmp_path):
+        from dms.config import ConfigError
+        cfg_file = tmp_path / "cfg.json"
+        cfg_file.write_text(json.dumps({"decision": {"distraction_secs": 1}}),
+                            encoding="utf-8")
+        with pytest.raises(ConfigError, match="distraction_secs"):
+            DMSConfig.from_json(cfg_file)
+
+    def test_invalid_value_rejected(self):
+        from dms.config import ConfigError, DecisionConfig
+        with pytest.raises(ConfigError):
+            DecisionConfig(state_confirm_frames=0)
 
     def test_missing_file(self):
         with pytest.raises(FileNotFoundError):
@@ -169,3 +185,48 @@ class TestConfig:
         assert cfg.head_pose.yaw_threshold == 25.0
         assert cfg.head_pose.pitch_down_threshold == -15.0
         assert cfg.target_fps == 30
+
+
+class TestMigration:
+    def test_old_alerts_schema_upgraded(self, tmp_path):
+        import sqlite3
+        db = tmp_path / "old.db"
+        con = sqlite3.connect(db)
+        con.execute("CREATE TABLE alerts (id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                    " session_id TEXT NOT NULL, alert_id INTEGER, level TEXT NOT NULL,"
+                    " state TEXT NOT NULL, message TEXT NOT NULL, ts REAL NOT NULL)")
+        con.execute("INSERT INTO alerts (session_id, alert_id, level, state, message, ts)"
+                    " VALUES ('s1', 1, 'WARNING', 'LEFT', 'm', 1.0)")
+        con.commit(); con.close()
+        with TelemetryStore(str(db), session_id="s1") as store:
+            rows = store.recent_alerts()
+            assert rows[0]["kind"] == "STARTED"
+            store.log_alert(AlertRecord("s1", 1, AlertLevel.NONE, "FORWARD", "ok", 2.0,
+                                        kind="CLEARED", reason="LATERAL", duration=1.0))
+            assert store.alert_count(kind="CLEARED") == 1
+
+    def test_cross_thread_access(self, tmp_path):
+        import threading
+        store = TelemetryStore(str(tmp_path / "t.db"), session_id="s1")
+        errors = []
+        def reader():
+            try:
+                for _ in range(20):
+                    store.frame_count(); store.recent_alerts()
+            except Exception as exc:  # noqa: BLE001
+                errors.append(exc)
+        th = threading.Thread(target=reader)
+        th.start()
+        for i in range(50):
+            store.log_frame(make_frame_record(frame_id=i))
+        th.join()
+        store.close()
+        assert errors == []
+
+
+class TestFalseAlarmRate:
+    def test_false_alarm_rate(self):
+        from dms.telemetry import false_alarm_rate
+        y_true = ["FORWARD", "FORWARD", "FORWARD", "FORWARD", "DOWN"]
+        y_pred = ["FORWARD", "LEFT", "FORWARD", "FORWARD", "DOWN"]
+        assert false_alarm_rate(y_true, y_pred) == pytest.approx(0.25)
