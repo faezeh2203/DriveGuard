@@ -1,18 +1,4 @@
-"""
-هموارسازی زمانی (Temporal Smoothing)
-=====================================
-
-سه ابزار کاهش نویز زمانی در این ماژول پیاده‌سازی شده است:
-
-1. :class:`KalmanFilter1D` — فیلتر کالمن تک‌متغیره با مدل حرکت
-   شبه-ثابت (Constant Velocity) برای هموارسازی هر یک از زوایای
-   Pitch/Yaw/Roll (مطابق مشخصات پروژه: Kalman Filter).
-2. :class:`MovingAverage` — میانگین متحرک پنجره‌ای به‌عنوان
-   مکمل ساده و پشتیبان فیلتر کالمن.
-3. :class:`HysteresisFilter` — هیسترزیس وضعیت: تغییر وضعیت
-   طبقه‌بندی تنها پس از ``N`` فریم متوالی پذیرفته می‌شود تا
-   نویز لحظه‌ای باعث هشدار کاذب (False Alarm) نشود.
-"""
+"""هموارسازی زمانی (Temporal Smoothing)"""
 
 from __future__ import annotations
 
@@ -21,24 +7,7 @@ from typing import Hashable, List, Optional
 
 
 class KalmanFilter1D:
-    """فیلتر کالمن تک‌متغیره با مدل سرعت ثابت.
-
-    بردار حالت ``[position, velocity]`` و مدل پیش‌بینی زیر است::
-
-        x[k+1] = F x[k] + w ,   F = [[1, dt], [0, 1]]
-
-    نویز فرایند و اندازه‌گیری به‌صورت اسکالر (واریانس) داده می‌شوند
-    و در ماتریس‌های Q و R به‌کار می‌روند. این پیاده‌سازی عمداً
-    کوچک و مستقل از کتابخانه‌های خارجی نگه داشته شده است تا رفتار
-    فیلتر در تست‌های واحد به‌طور قطعی (Deterministic) قابل بررسی باشد.
-
-    Args:
-        process_noise: واریانس نویز فرایند (نوسان واقعی سیگنال).
-            مقدار بزرگ‌تر ⇒ فیلتر سریع‌تر دنبال می‌کند.
-        measurement_noise: واریانس نویز اندازه‌گیری. مقدار بزرگ‌تر
-            ⇒ خروجی هموارتر اما با تأخیر بیشتر.
-        initial_value: مقدار اولیه موقعیت (None ⇒ 0).
-    """
+    """فیلتر کالمن تک‌متغیره با مدل سرعت ثابت."""
 
     def __init__(self, process_noise: float = 1.0,
                  measurement_noise: float = 4.0,
@@ -63,15 +32,7 @@ class KalmanFilter1D:
         return self.state[0]
 
     def step(self, measurement: float, dt: float = 1.0 / 30.0) -> float:
-        """یک گام کامل پیش‌بینی + به‌روزرسانی کالمن.
-
-        Args:
-            measurement: اندازه‌گیری جدید (مثلاً yaw خام فریم فعلی).
-            dt: فاصله زمانی بین دو گام (ثانیه).
-
-        Returns:
-            تخمین هموارشده موقعیت.
-        """
+        """یک گام کامل پیش‌بینی + به‌روزرسانی کالمن."""
         if not self._initialized:
             self.state = (float(measurement), 0.0)
             self.covariance = ((self.process_noise, 0.0), (0.0, 25.0))
@@ -112,14 +73,7 @@ class KalmanFilter1D:
 
 
 class MovingAverage:
-    """میانگین متحرک با پنجره ثابت (Simple Moving Average).
-
-    Args:
-        window: طول پنجره (تعداد نمونه). باید >= 1 باشد.
-
-    Raises:
-        ValueError: اگر ``window`` کمتر از 1 باشد.
-    """
+    """میانگین متحرک با پنجره ثابت (Simple Moving Average)."""
 
     def __init__(self, window: int = 5) -> None:
         if window < 1:
@@ -142,20 +96,7 @@ class MovingAverage:
 
 
 class HysteresisFilter:
-    """فیلتر هیسترزیس وضعیت (State Debounce).
-
-    یک وضعیت جدید تنها زمانی به‌عنوان وضعیت پایدار پذیرفته می‌شود که
-    ``min_frames`` بار متوالی رخ داده باشد؛ در غیر این صورت آخرین
-    وضعیت پایدار حفظ می‌شود. این همان «False Alarm با Hysteresis
-    Filtering» ذکرشده در مشخصات پروژه است.
-
-    Args:
-        min_frames: حداقل تعداد فریم متوالی برای تأیید وضعیت جدید.
-        initial: وضعیت اولیه (None ⇒ هنوز وضعیتی پایدار نشده).
-
-    Raises:
-        ValueError: اگر ``min_frames`` کمتر از 1 باشد.
-    """
+    """فیلتر هیسترزیس وضعیت (State Debounce)."""
 
     def __init__(self, min_frames: int = 5,
                  initial: Optional[Hashable] = None) -> None:
@@ -173,14 +114,7 @@ class HysteresisFilter:
         self._count = 0
 
     def update(self, raw_state: Hashable) -> Hashable:
-        """ثبت وضعیت خام فریم جاری و بازگرداندن وضعیت پایدار.
-
-        Args:
-            raw_state: وضعیت طبقه‌بندی‌شده فریم جاری (خام، بدون هیسترزیس).
-
-        Returns:
-            وضعیت پایدار پس از اعمال هیسترزیس.
-        """
+        """ثبت وضعیت خام فریم جاری و بازگرداندن وضعیت پایدار."""
         if raw_state == self._candidate:
             self._count += 1
         else:
@@ -197,14 +131,6 @@ class HysteresisFilter:
 
 
 def smooth_series(values: List[float], window: int = 5) -> List[float]:
-    """هموارسازی یک سری کامل با میانگین متحرک (ابزار کمکی آزمون/گزارش).
-
-    Args:
-        values: دنباله مقادیر ورودی.
-        window: طول پنجره میانگین متحرک.
-
-    Returns:
-        لیست هم‌طول ورودی؛ عنصر i میانگین پنجره‌ای است که به i ختم می‌شود.
-    """
+    """هموارسازی یک سری کامل با میانگین متحرک (ابزار کمکی آزمون/گزارش)."""
     ma = MovingAverage(window)
     return [ma.update(v) for v in values]

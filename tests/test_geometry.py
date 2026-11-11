@@ -17,8 +17,6 @@ from dms.geometry import (
 
 
 class TestEulerRoundtrip:
-    """تبدیل زوایا به بردار چرخش و بازگشت باید بازتاب دقیق باشد."""
-
     @pytest.mark.parametrize("pitch,yaw,roll", [
         (0, 0, 0),
         (10, -20, 5),
@@ -41,8 +39,6 @@ class TestEulerRoundtrip:
 
 
 class TestRotationMatrixDecomposition:
-    """تجزیه ماتریس چرخش باید با چرخش‌های محوری استاندارد سازگار باشد."""
-
     def test_identity(self):
         out = rotation_matrix_to_euler(np.eye(3))
         assert (out.pitch, out.yaw, out.roll) == (0, 0, 0)
@@ -62,8 +58,6 @@ class TestRotationMatrixDecomposition:
 
 
 class TestFaceModel:
-    """مدل سه‌بعدی صورت باید متقارن و کامل باشد."""
-
     def test_shape(self):
         assert GENERIC_3D_FACE_MODEL.shape == (6, 3)
 
@@ -79,8 +73,6 @@ class TestFaceModel:
 
 
 class TestProjection:
-    """پروجکشن مدل باید رفتار پرسپکتیو صحیح داشته باشد."""
-
     def test_frontal_projection_symmetric_about_center(self):
         pts = project_face_model(0, 0, 0)
         nose, chin, le, re, lm, rm = pts
@@ -113,8 +105,6 @@ class TestProjection:
 
 
 class TestEAR:
-    """Eye Aspect Ratio باید با هندسه چشم رفتار صحیح داشته باشد."""
-
     def _eye(self, vertical: float, horizontal: float) -> np.ndarray:
         return np.array([
             [0, 0], [-horizontal / 4, -vertical / 2],

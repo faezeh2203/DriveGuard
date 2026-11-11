@@ -1,25 +1,4 @@
-"""
-هندسه صورت و تبدیلات چرخش (Geometry)
-=====================================
-
-این ماژول شامل موارد زیر است:
-
-1. مدل سه‌بعدی عمومی صورت (Generic 3D Face Model) شامل شش نقطه شاخص
-   که با نقاط متناظر آن‌ها در مدل ۴۶۸ لندمارکی MediaPipe جفت می‌شود.
-2. تبدیل بردار چرخش (Rotation Vector خروجی ``cv2.solvePnP``) به
-   زوایای اولر (Pitch/Yaw/Roll) بر حسب درجه.
-
-قرارداد مختصات:
-    از دستگاه مختصات دوربین OpenCV استفاده می‌کنیم:
-    ``x`` به سمت راست تصویر، ``y`` به سمت پایین تصویر و ``z``
-    به سمت داخل صحنه. مدل سه‌بعدی صورت طوری تعریف شده که در حالت
-    «نگاه مستقیم» محور +z آن رو به دوربین باشد.
-
-قرارداد زوایا (خروجی سیستم):
-    - **Pitch**: بالا/پایین بردن سر. مثبت = نگاه به بالا، منفی = نگاه به پایین.
-    - **Yaw**: چپ/راست گرداندن سر. مثبت = گرداندن سر به راست تصویر.
-    - **Roll**: خم کردن سر به پهلو (کج کردن). مثبت = کج به راست تصویر.
-"""
+"""هندسه صورت و تبدیلات چرخش (Geometry)"""
 
 from __future__ import annotations
 
@@ -28,9 +7,7 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
-# ---------------------------------------------------------------------------
 # مدل سه‌بعدی عمومی صورت (بر حسب واحد دلخواه ≈ میلی‌متر)
-# ---------------------------------------------------------------------------
 # این شش نقطه، نقاط استاندارد مرجع برای تخمین وضعیت سر با SolvePnP هستند
 # و با اندیس‌های لندمارک MediaPipe Face Mesh در زیر جفت شده‌اند.
 # هر ردیف: (x, y, z) در دستگاه مختصات سر؛ مبدأ روی نوک بینی.
@@ -63,13 +40,7 @@ RIGHT_IRIS_IDS = (473, 474, 475, 476, 477)
 
 @dataclass(frozen=True)
 class EulerAngle:
-    """زوایای اولر سر بر حسب درجه.
-
-    Attributes:
-        pitch: بالا/پایین (x).
-        yaw: چپ/راست (y).
-        roll: کج به پهلو (z).
-    """
+    """زوایای اولر سر بر حسب درجه."""
 
     pitch: float
     yaw: float
@@ -81,40 +52,14 @@ class EulerAngle:
 
 
 def rotation_vector_to_euler(rvec: np.ndarray) -> EulerAngle:
-    """تبدیل بردار چرخش به زوایای اولر Pitch/Yaw/Roll.
-
-    بردار چرخش با فرمول رودریگز به ماتریس چرخش تبدیل و سپس با
-    تجزیه استاندارد ``xyz`` به زوایای اولر تفکیک می‌شود
-    (پیاده‌سازی معادل ``scipy.Rotation.as_euler('xyz')`` بدون وابستگی).
-
-    Args:
-        rvec: بردار چرخش 3×1 خروجی ``cv2.solvePnP``.
-
-    Returns:
-        شیء :class:`EulerAngle` بر حسب درجه.
-    """
+    """تبدیل بردار چرخش به زوایای اولر Pitch/Yaw/Roll."""
     rvec = np.asarray(rvec, dtype=np.float64).reshape(3, 1)
     rot_matrix, _ = cv2.Rodrigues(rvec)
     return rotation_matrix_to_euler(rot_matrix)
 
 
 def rotation_matrix_to_euler(rot_matrix: np.ndarray) -> EulerAngle:
-    """تجزیه ماتریس چرخش به زوایای اولر.
-
-    ماتریس چرخش به صورت ``R = Rz(roll) · Ry(yaw) · Rx(pitch)``
-    (چرخش به ترتیب حول محورهای ثابت x، y، z) تجزیه می‌شود؛ فرمول
-    استاندارد این قرارداد::
-
-        pitch = atan2(R[2,1], R[2,2])                       # محور x
-        yaw   = atan2(-R[2,0], sqrt(R[2,1]² + R[2,2]²))     # محور y
-        roll  = atan2(R[1,0], R[0,0])                       # محور z
-
-    Args:
-        rot_matrix: ماتریس چرخش 3×3.
-
-    Returns:
-        زوایای اولر بر حسب درجه.
-    """
+    """تجزیه ماتریس چرخش به زوایای اولر."""
     rot_matrix = np.asarray(rot_matrix, dtype=np.float64)
     sin_yaw = -rot_matrix[2, 0]
     sin_yaw = float(np.clip(sin_yaw, -1.0, 1.0))
@@ -129,14 +74,7 @@ def rotation_matrix_to_euler(rot_matrix: np.ndarray) -> EulerAngle:
 
 
 def euler_to_rotation_vector(pitch: float, yaw: float, roll: float) -> np.ndarray:
-    """ساخت بردار چرخش از زوایای اولر (عکس تابع بالا؛ برای تست و شبیه‌سازی).
-
-    Args:
-        pitch, yaw, roll: زوایا بر حسب درجه.
-
-    Returns:
-        بردار چرخش 3×1 numpy.
-    """
+    """ساخت بردار چرخش از زوایای اولر (عکس تابع بالا؛ برای تست و شبیه‌سازی)."""
     rx, ry, rz = np.radians([pitch, yaw, roll])
     # R = Rz(roll) @ Ry(yaw) @ Rx(pitch)  (معکوس تجزیه xyz)
     rx_m = np.array([[1, 0, 0], [0, np.cos(rx), -np.sin(rx)], [0, np.sin(rx), np.cos(rx)]])
@@ -154,21 +92,7 @@ def project_face_model(
     translation: tuple = (0.0, 0.0, 500.0),
     camera_matrix: np.ndarray | None = None,
 ) -> np.ndarray:
-    """پروجکشن مدل سه‌بعدی صورت با چرخش معلوم به مختصات تصویر.
-
-    این تابع برای ساخت داده‌های آزمون (Ground Truth مصنوعی) استفاده
-    می‌شود: مدل صورت را با زوایای معلوم می‌چرخانیم، با ماتریس دوربین
-    به صفحه تصویر می‌تابانیم و خروجی را به‌عنوان لندمارک‌های ورودی
-    به تخمین‌گر وضعیت سر می‌دهیم.
-
-    Args:
-        pitch, yaw, roll: چرخش معلوم سر بر حسب درجه.
-        translation: انتقال ``(tx, ty, tz)`` سر نسبت به دوربین.
-        camera_matrix: ماتریس داخلی دوربین (در صورت None ساخته می‌شود).
-
-    Returns:
-        آرایه (6, 2) مختصات تصویری شش نقطه مدل.
-    """
+    """پروجکشن مدل سه‌بعدی صورت با چرخش معلوم به مختصات تصویر."""
     rvec = euler_to_rotation_vector(pitch, yaw, roll)
     rot_matrix, _ = cv2.Rodrigues(rvec)
     tvec = np.array(translation, dtype=np.float64).reshape(3, 1)
@@ -183,22 +107,7 @@ def project_face_model(
 
 
 def eye_aspect_ratio(eye_points: np.ndarray) -> float:
-    """محاسبه Eye Aspect Ratio (EAR) برای تشخیص باز/بسته بودن چشم.
-
-    EAR نسبت فاصله عمودی پلک‌ها به فاصله افقی گوشه‌های چشم است
-    (Soukupová & Čech, 2016)::
-
-        EAR = (|p2-p6| + |p3-p5|) / (2 |p1-p4|)
-
-    چشم باز EAR ≈ 0.25..0.35 و چشم بسته EAR ≈ < 0.2 دارد.
-
-    Args:
-        eye_points: آرایه (6, 2) مختصات شش لندمارک چشم
-            (به ترتیب ``LEFT_EYE_EAR_IDS`` / ``RIGHT_EYE_EAR_IDS``).
-
-    Returns:
-        نسبت EAR (بدون بعد).
-    """
+    """محاسبه Eye Aspect Ratio (EAR) برای تشخیص باز/بسته بودن چشم."""
     pts = np.asarray(eye_points, dtype=np.float64)
     vertical_1 = np.linalg.norm(pts[1] - pts[5])
     vertical_2 = np.linalg.norm(pts[2] - pts[4])

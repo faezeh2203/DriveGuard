@@ -12,11 +12,6 @@ CAMERA = default_camera_matrix(SIZE)
 
 
 def build_points(pitch, yaw, roll) -> np.ndarray:
-    """ساخت شش نقطه تصویری از مدل با چرخش معلوم (Ground Truth).
-
-    پروجکشن با همان ماتریس دوربینی انجام می‌شود که تخمین‌گر استفاده
-    می‌کند تا خطای مدل دوربین در تست دخالت نکند.
-    """
     pts2d = project_face_model(pitch, yaw, roll, translation=(0, 0, 500),
                                camera_matrix=CAMERA)
     full = np.zeros((478, 3))
@@ -26,13 +21,10 @@ def build_points(pitch, yaw, roll) -> np.ndarray:
 
 
 def make_estimator(**kwargs) -> HeadPoseEstimator:
-    """تخمین‌گر با ماتریس دوربین معلوم (هم‌سان با داده آزمون)."""
     return HeadPoseEstimator(camera_matrix=CAMERA, **kwargs)
 
 
 class TestRecovery:
-    """زاویه معلوم باید از نقطه‌های تصویری بازیابی شود."""
-
     @pytest.mark.parametrize("pitch,yaw,roll", [
         (0, 0, 0),
         (10, 20, 5),
@@ -61,21 +53,17 @@ class TestRecovery:
         assert abs(pose.angles.roll) < 1
 
     def test_pitch_down_is_negative(self):
-        """قرارداد پروژه: نگاه به پایین = pitch منفی."""
         est = make_estimator(use_extrinsic_guess=False)
         pose = est.estimate(build_points(-20, 0, 0), SIZE)
         assert pose.angles.pitch < -10
 
     def test_yaw_positive_is_right(self):
-        """قرارداد پروژه: yaw مثبت = چرخش به راست تصویر."""
         est = make_estimator(use_extrinsic_guess=False)
         pose = est.estimate(build_points(0, 30, 0), SIZE)
         assert pose.angles.yaw > 10
 
 
 class TestRobustness:
-    """رفتار تخمین‌گر در ورودی‌های خراب/نویزی."""
-
     def test_wrong_point_count_raises(self):
         est = HeadPoseEstimator()
         with pytest.raises(ValueError):
@@ -97,7 +85,6 @@ class TestRobustness:
         assert noisy.reprojection_error > clean.reprojection_error
 
     def test_default_camera_matrix_fallback(self):
-        """بدون ماتریس کالیبره، تقریب پیش‌فرض استفاده می‌شود (خطای کمی بیشتر)."""
         est = HeadPoseEstimator(use_extrinsic_guess=False)
         pose = est.estimate(build_points(0, 0, 0), SIZE)
         assert pose.success
@@ -105,8 +92,6 @@ class TestRobustness:
 
 
 class TestExtrinsicGuess:
-    """حالت حدس اولیه باید پایداری بین فریم‌ها را حفظ کند."""
-
     def test_sequential_frames_consistent(self):
         est = make_estimator(use_extrinsic_guess=True)
         first = est.estimate(build_points(0, 0, 0), SIZE)

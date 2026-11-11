@@ -1,18 +1,4 @@
-"""ارزیابی سیستم روی ویدیوی برچسب‌خورده (Ground Truth).
-
-ویدیوی ورودی باید با یک فایل برچسب CSV همراه باشد؛ هر سطر::
-
-    start_sec,end_sec,state
-
-که ``state`` یکی از FORWARD / LEFT / RIGHT / DOWN / UP / NO_FACE است.
-
-خروجی: متریک‌های Accuracy، F1-score و False Positive Rate (طبق
-مشخصات پروژه) به همراه Latency میانگین هر فریم.
-
-Usage:
-    python scripts/evaluate.py --video clip.mp4 --labels labels.csv \
-        [--report telemetry/eval_report.json]
-"""
+"""ارزیابی سیستم روی ویدیوی برچسب‌خورده (Ground Truth)."""
 
 from __future__ import annotations
 

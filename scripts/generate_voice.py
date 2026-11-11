@@ -1,18 +1,4 @@
-"""
-ساخت فایل‌های صوتی هشدار گفتاری (فارسی)
-=========================================
-
-با موتور Microsoft Edge TTS (صدای عصبی فارسی) جمله‌های هشدار ساخته،
-بلندی‌شان نرمال‌سازی/تقویت می‌شود و به صورت WAV در ``assets/voice/``
-ذخیره می‌شوند. فقط یک بار (با اینترنت) اجرا می‌شود؛ پس از آن سیستم
-بدون اینترنت کار می‌کند.
-
-    python scripts/generate_voice.py                   # صدای زن (Dilara)
-    python scripts/generate_voice.py --voice fa-IR-FaridNeural   # صدای مرد
-    python scripts/generate_voice.py --force           # بازسازی همه فایل‌ها
-
-پیش‌نیاز: ``pip install edge-tts miniaudio``
-"""
+"""ساخت فایل‌های صوتی هشدار گفتاری (فارسی)"""
 
 from __future__ import annotations
 

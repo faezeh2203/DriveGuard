@@ -1,21 +1,4 @@
-"""
-داشبورد وب (Flask Dashboard)
-=============================
-
-رابط وب برای پایش زنده وضعیت سیستم از طریق مرورگر:
-
-- ``/``                 صفحه داشبورد (قالب ``templates/dashboard.html``)
-- ``/api/status``       وضعیت لحظه‌ای به صورت JSON
-- ``/api/stream``       جریان Server-Sent Events وضعیت (~۱۰ بار در ثانیه)
-- ``/api/history``      نمونه‌های اخیر برای رسم نمودار
-- ``/api/alerts``       آخرین رخدادهای هشدار (از Telemetry)
-- ``/api/summary``      خلاصه جلسه (تعداد هشدار، توزیع وضعیت‌ها)
-- ``/api/export/<fmt>`` دانلود گزارش جلسه (``json`` یا ``csv``)
-- ``/video_feed``       جریان MJPEG زنده با حاشیه‌نویسی
-
-داشبورد با ``threading`` از حلقه اصلی پردازش تغذیه می‌شود؛ کلاس
-:class:`SharedState` نقطه اشتراک ایمن Thread را فراهم می‌کند.
-"""
+"""داشبورد وب (Flask Dashboard)"""
 
 from __future__ import annotations
 
@@ -130,12 +113,7 @@ def status_payload(result: Optional[FrameResult], started_at: float | None = Non
 
 
 class Dashboard:
-    """سرور داشبورد Flask.
-
-    Args:
-        shared: حالت اشتراکی تغذیه‌شده توسط حلقه پردازش.
-        store: ذخیره‌ساز Telemetry (اختیاری؛ برای لاگ هشدار و خروجی گزارش).
-    """
+    """سرور داشبورد Flask."""
 
     def __init__(self, shared: SharedState, store: "TelemetryStore | None" = None) -> None:
         self.shared = shared
@@ -153,7 +131,6 @@ class Dashboard:
         self.app.add_url_rule("/api/export/<fmt>", "export", self._export)
         self.app.add_url_rule("/video_feed", "feed", self._video_feed)
 
-    # ------------------------------------------------------------------
     def _index(self) -> str:
         return render_template("dashboard.html",
                                session_id=getattr(self.store, "session_id", ""))
@@ -162,7 +139,6 @@ class Dashboard:
         return jsonify(status_payload(self.shared.latest, self.shared.started_at))
 
     def _stream(self) -> Response:
-        """Server-Sent Events: ارسال وضعیت با هر فریم جدید (حداکثر ~۱۰Hz)."""
         def generate():
             version = -1
             while True:
@@ -216,7 +192,6 @@ class Dashboard:
         return send_file(path, as_attachment=True, download_name=name)
 
     def _video_feed(self) -> Response:
-        """جریان MJPEG زنده (فقط فریم‌های جدید ارسال می‌شوند)."""
         def generate():
             version = -1
             while True:
@@ -232,10 +207,9 @@ class Dashboard:
                         mimetype="multipart/x-mixed-replace; boundary=frame",
                         headers={"Cache-Control": "no-cache"})
 
-    # ------------------------------------------------------------------
     def run(self, host: str = "127.0.0.1", port: int = 5000,
             debug: bool = False) -> None:
-        """اجرای سرور (بلوکه‌کننده — معمولاً در Thread جدا فراخوانی شود)."""
+        """اجرای سرور (بلوکه‌کننده، معمولاً در Thread جدا فراخوانی شود)."""
         self.app.run(host=host, port=port, debug=debug,
                      use_reloader=False, threaded=True)
 

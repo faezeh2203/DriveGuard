@@ -12,7 +12,6 @@ from dms.pipeline import FrameResult
 
 
 def make_result(frame_id=1, ts=0.033):
-    """ساخت FrameResult نمونه برای تغذیه داشبورد."""
     return FrameResult(
         frame_id=frame_id, timestamp=ts,
         angles=EulerAngle(pitch=-2.0, yaw=8.0, roll=1.0),

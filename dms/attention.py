@@ -1,30 +1,4 @@
-"""
-طبقه‌بندی وضعیت توجه (Attention State Classification)
-======================================================
-
-بر پایه زوایای هموارشده سر (Yaw/Pitch/Roll) وضعیت توجه راننده
-در یکی از حالت‌های زیر طبقه‌بندی می‌شود (مطابق مشخصات پروژه):
-
-- ``FORWARD``: نگاه به جلو (درست)
-- ``LEFT`` / ``RIGHT``: برگرداندن سر به چپ/راست (|yaw| > آستانه)
-- ``DOWN``: نگاه به پایین — سناریوی رایج استفاده از موبایل (pitch < آستانه)
-- ``UP``: نگاه به بالا (فراتر از آستانه)
-- ``PHONE``: تلفن همراه نزدیک چهره راننده دیده شده (تماس دستی / گوشی در دست)
-- ``NO_FACE``: چهره‌ای تشخیص داده نشده (خارج از کادر / پوشش صورت)
-
-وضعیت ``PHONE`` در پایپ‌لاین (نه در این کلاس) از خروجی
-:class:`dms.phone_detector.PhoneDetector` تزریق می‌شود: هرگاه جعبه
-گوشی با ناحیه بزرگ‌شده جعبه چهره هم‌پوشانی داشته باشد، وضعیت نهایی
-به ``PHONE`` ارتقا می‌یابد.
-
-اگر عنبیه‌ها (Iris، لندمارک‌های ۴۶۸..۴۷۷) موجود باشند، جهت نگاه
-چشم‌ها (Gaze) نیز تخمین زده می‌شود و به تصمیم کمک می‌کند:
-در حالت مرزی (سر رو به جلو اما چشم‌ها منحرف)، وضعیت ``FORWARD`` حفظ
-نمی‌شود و به حالت چپ/راست ارتقا می‌یابد.
-
-آستانه‌ها مطابق مشخصات پروژه: yaw > 25° و pitch < -15° (قابل تنظیم
-در :class:`dms.config.HeadPoseConfig`).
-"""
+"""طبقه‌بندی وضعیت توجه (Attention State Classification)"""
 
 from __future__ import annotations
 
@@ -72,15 +46,7 @@ _FA_LABELS = {
 
 @dataclass(frozen=True)
 class AttentionResult:
-    """خروجی طبقه‌بندی توجه.
-
-    Attributes:
-        raw_state: وضعیت خام (بدون در نظر گرفتن جهت عنبیه).
-        state: وضعیت نهایی پس از ترکیب جهت نگاه چشم‌ها.
-        gaze_offset: انحراف افقی عنبیه نسبت به مرکز چشم (بدون بعد،
-            مثبت = نگاه به راست تصویر)؛ اگر عنبیه موجود نباشد 0.
-        ear: میانگین Eye Aspect Ratio دو چشم (برای ماژول خواب‌آلودگی).
-    """
+    """خروجی طبقه‌بندی توجه."""
 
     raw_state: AttentionState
     state: AttentionState
@@ -89,18 +55,7 @@ class AttentionResult:
 
 
 class AttentionClassifier:
-    """طبقه‌بند قاعده‌مند (Threshold-based) وضعیت توجه.
-
-    طبقه‌بندی مبتنی بر آستانه همان رویکردی است که در پیاده‌سازی‌های
-    مرجع DMS استفاده می‌شود؛ گزینه جایگزین (کلاسیفایر Softmax CNN یا
-    LSTM زمانی) در گزارش پروژه به‌عنوان کار آینده بحث شده است.
-
-    Args:
-        config: آستانه‌های زاویه‌ای.
-        gaze_gain: ضریب ارتقای انحراف عنبیه به وضعیت چپ/راست؛
-            انحراف مطلق عنبیه بیشتر از این مقدار (بدون بعد) زمانی که
-            سر رو به جلو است، وضعیت را به LEFT/RIGHT تغییر می‌دهد.
-    """
+    """طبقه‌بند قاعده‌مند (Threshold-based) وضعیت توجه."""
 
     GAZE_OFFSET_LIMIT = 0.12
 
@@ -111,16 +66,7 @@ class AttentionClassifier:
 
     def classify(self, angles: EulerAngle,
                  landmarks=None) -> AttentionResult:
-        """طبقه‌بندی وضعیت توجه از زوایای سر (و لندمارک‌های اختیاری).
-
-        Args:
-            angles: زوایای هموارشده Pitch/Yaw/Roll (درجه).
-            landmarks: آرایه (N, 3) لندمارک‌ها؛ اگر 478 نقطه‌ای باشد
-                جهت نگاه چشم‌ها نیز استفاده می‌شود.
-
-        Returns:
-            شیء :class:`AttentionResult`.
-        """
+        """طبقه‌بندی وضعیت توجه از زوایای سر (و لندمارک‌های اختیاری)."""
         ear = self._compute_ear(landmarks)
         gaze = self._gaze_offset(landmarks)
 
@@ -143,7 +89,6 @@ class AttentionClassifier:
                                gaze_offset=gaze, ear=ear)
 
     def _compute_ear(self, landmarks) -> float:
-        """میانگین EAR دو چشم (0 اگر لندمارک در دسترس نباشد)."""
         if landmarks is None:
             return 0.0
         landmarks = np.asarray(landmarks)
@@ -154,12 +99,6 @@ class AttentionClassifier:
         return (left + right) / 2.0
 
     def _gaze_offset(self, landmarks) -> float:
-        """انحراف افقی نرمال‌شده عنبیه نسبت به مرکز چشم.
-
-        عنبیه در مدل 478 لندمارکی با اندیس‌های 468..477 موجود است.
-        خروجی بر حسب «نسبت به عرض چشم» نرمال می‌شود تا به مقیاس
-        تصویر وابسته نباشد.
-        """
         if landmarks is None:
             return 0.0
         landmarks = np.asarray(landmarks)

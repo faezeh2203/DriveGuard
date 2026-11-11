@@ -1,15 +1,9 @@
-"""
-نقطه ورود برنامه (CLI Entry Point)
-===================================
-
-اجرای سیستم تشخیص حواس‌پرتی از خط فرمان::
+"""نقطه ورود برنامه (CLI Entry Point)
 
     python -m dms.main --source 0                # وبکم با پنجره OpenCV
     python -m dms.main --source video.mp4        # فایل ویدیو
     python -m dms.main --source 0 --dashboard    # داشبورد وب Flask
     python -m dms.main --source 0 --config cfg.json --export
-
-کلید خروج: ``q`` یا ``Esc`` (در پنجره OpenCV) یا ``Ctrl+C``.
 """
 
 from __future__ import annotations
@@ -61,7 +55,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def _source_to_capture(source: str):
-    """تبدیل رشته منبع به شماره وبکم یا مسیر."""
     if source.isdigit():
         return int(source)
     return source
@@ -149,7 +142,6 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _override_camera_id(config: DMSConfig, source: str) -> DMSConfig:
-    """ثبت شناسه منبع در پیکربندی Telemetry."""
     telemetry = replace(config.telemetry, camera_id=f"src-{source}")
     return replace(config, telemetry=telemetry)
 

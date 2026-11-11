@@ -10,8 +10,6 @@ from dms.video import VideoSource
 
 
 class TestAlertAnnotation:
-    """رسم وضعیت روی فریم."""
-
     def _decision(self, level, state=AttentionState.FORWARD, message=""):
         return Decision(stable_state=state, alert_level=level, message=message)
 
@@ -56,8 +54,6 @@ class TestAlertAnnotation:
 
 
 class TestVideoSource:
-    """منبع ویدیو با فایل ساخته‌شده از فریم‌های مصنوعی."""
-
     @pytest.fixture
     def video_file(self, tmp_path):
         import cv2
@@ -134,8 +130,6 @@ class TestSoundWorker:
 
 
 class TestVoiceAlerts:
-    """آژیر بلند + هشدار گفتاری فارسی."""
-
     @pytest.fixture
     def worker(self, monkeypatch, tmp_path):
         import time

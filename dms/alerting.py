@@ -1,22 +1,4 @@
-"""
-هشدار به راننده (Driver Alerting)
-==================================
-
-:class:`AlertManager` تصمیم موتور تصمیم را به اکشن فیزیکی تبدیل
-می‌کند:
-
-- **صوتی**: بوق تکرارشونده در یک Thread جداگانه (:class:`SoundWorker`)
-  تا زمانی که هشدار فعال است؛ الگوی بوق به سطح هشدار بستگی دارد
-  (WARNING: بوق منظم، CRITICAL: بوق تند و زیر). پخش صدا هرگز حلقه
-  پردازش تصویر را مسدود نمی‌کند (``winsound.Beep`` همگام است و در نسخه
-  قبل هر بار ~۲۵۰ms فریم‌ها را متوقف می‌کرد).
-- **تصویری**: HUD روی فریم — نوار وضعیت، نوار پیشرفت تا هشدار،
-  بنر چشمک‌زن هشدار و قاب رنگی.
-- **رخداد**: تبدیل تغییر وضعیت هشدار (شروع/ارتقا/پایان) به
-  :class:`AlertEvent` برای ثبت در Telemetry.
-
-سیستم در محیط‌های Headless (بدون صدا/نمایشگر) هم بدون خطا کار می‌کند.
-"""
+"""هشدار به راننده (Driver Alerting)"""
 
 from __future__ import annotations
 
@@ -57,18 +39,7 @@ _REASON_TEXT = {
 
 @dataclass(frozen=True)
 class AlertEvent:
-    """یک رخداد هشدار برای ثبت در Telemetry و داشبورد.
-
-    Attributes:
-        alert_id: شناسه دوره هشدار.
-        level: سطح هشدار.
-        message: پیام متنی.
-        state: وضعیت توجه پایدار.
-        kind: نوع رخداد: ``STARTED``، ``ESCALATED``، ``REASON_CHANGED``،
-            ``CLEARED`` یا ``ONGOING`` (ادامه هشدار بدون تغییر).
-        reason: علت هشدار.
-        duration: مدت هشدار تا این لحظه (ثانیه).
-    """
+    """یک رخداد هشدار برای ثبت در Telemetry و داشبورد."""
 
     alert_id: int | None
     level: AlertLevel
@@ -89,11 +60,7 @@ _SAMPLE_RATE = 24000
 
 def make_siren(frequency: float, duration_ms: int, volume: float = 1.0,
                sample_rate: int = _SAMPLE_RATE) -> np.ndarray:
-    """ساخت آژیر بلند دوتُنه (warble) غنی از هارمونیک — نمونه‌های float32.
-
-    موج سینوسی با هارمونیک‌های فرد و برش نرم، در بلندی یکسان بسیار
-    رساتر از ``winsound.Beep`` (بلندگوی سیستمی) شنیده می‌شود.
-    """
+    """ساخت آژیر بلند دوتُنه (warble) غنی از هارمونیک، نمونه‌های float32."""
     n = max(int(sample_rate * duration_ms / 1000), 1)
     t = np.arange(n) / sample_rate
     # تغییر فرکانس بین f و 1.35f با نرخ ۸ هرتز (آژیر پلیسی)
@@ -126,7 +93,6 @@ def to_wav_bytes(samples: np.ndarray, sample_rate: int = _SAMPLE_RATE) -> bytes:
 
 
 def _load_wav(path: Path, volume: float) -> bytes | None:
-    """خواندن WAV و اعمال ضریب بلندی (None اگر خواندن ناموفق باشد)."""
     import wave
 
     try:
@@ -143,17 +109,7 @@ def _load_wav(path: Path, volume: float) -> bytes | None:
 
 
 class SoundWorker:
-    """پخش آژیر و هشدار گفتاری فارسی در Thread پس‌زمینه.
-
-    حلقه پردازش فقط وضعیت هشدار را با :meth:`update` اعلام می‌کند؛ این
-    Thread تا وقتی هشدار فعال است آژیر را تکرار می‌کند و هر
-    ``voice_repeat_seconds`` ثانیه (و فوراً هنگام شروع یا تغییر علت هشدار)
-    جمله گفتاری متناسب را پخش می‌کند — مثلاً «لطفاً به جلو و جاده نگاه کنید».
-    پس از اصلاح رفتار، پیام «متشکرم» پخش می‌شود.
-
-    فایل‌های گفتاری با ``scripts/generate_voice.py`` ساخته می‌شوند؛ اگر
-    موجود نباشند فقط آژیر پخش می‌شود.
-    """
+    """پخش آژیر و هشدار گفتاری فارسی در Thread پس‌زمینه."""
 
     def __init__(self, config: AlertConfig | None = None) -> None:
         self.config = config or AlertConfig()
@@ -182,7 +138,7 @@ class SoundWorker:
             if data is not None:
                 voices[path.stem.upper()] = data
         if not voices:
-            log.info("voice alerts unavailable (no WAV files in %s) — "
+            log.info("voice alerts unavailable (no WAV files in %s); "
                      "run scripts/generate_voice.py", voice_dir)
         return voices
 
@@ -191,13 +147,6 @@ class SoundWorker:
             return
         self._thread = threading.Thread(target=self._run, name="dms-sound", daemon=True)
         self._thread.start()
-
-    def set_level(self, level: AlertLevel) -> None:
-        """تنظیم سطح هشدار (سازگاری با نسخه قبل)."""
-        with self._cond:
-            if level is not self._level:
-                self._level = level
-                self._cond.notify()
 
     def update(self, decision: Decision) -> None:
         """اعلام وضعیت هشدار فریم جاری به Thread صدا."""
@@ -266,7 +215,6 @@ class SoundWorker:
                     return
 
     def _play(self, wav: bytes) -> None:
-        """پخش همگام یک WAV (فقط این Thread مسدود می‌شود)."""
         try:
             if self._is_windows:
                 import winsound
@@ -294,21 +242,11 @@ class SoundWorker:
 
 
 class AlertManager:
-    """مدیریت هشدار تصویری/صوتی و تولید رخدادهای هشدار.
-
-    Args:
-        enable_sound: فعال‌سازی بوق صوتی (در محیط تست معمولاً خاموش).
-        beep_interval_seconds: (سازگاری با نسخه قبل) فاصله بوق WARNING.
-        config: پیکربندی صدا.
-    """
+    """مدیریت هشدار تصویری/صوتی و تولید رخدادهای هشدار."""
 
     def __init__(self, enable_sound: bool = True,
-                 beep_interval_seconds: float | None = None,
                  config: AlertConfig | None = None) -> None:
         cfg = config or AlertConfig()
-        if beep_interval_seconds is not None:
-            from dataclasses import replace
-            cfg = replace(cfg, warning_interval=beep_interval_seconds)
         self.config = cfg
         self.enable_sound = enable_sound and cfg.sound_enabled
         self.last_event: AlertEvent | None = None
@@ -318,16 +256,7 @@ class AlertManager:
             self._sound.start()
 
     def handle(self, decision: Decision, timestamp: float) -> AlertEvent | None:
-        """پردازش تصمیم و صدور اکشن هشدار.
-
-        Args:
-            decision: خروجی موتور تصمیم.
-            timestamp: زمان فعلی (ثانیه).
-
-        Returns:
-            :class:`AlertEvent` برای فریم‌هایی که هشدار فعال دارند یا هشدار
-            در آن‌ها پایان یافته؛ وگرنه None.
-        """
+        """پردازش تصمیم و صدور اکشن هشدار."""
         level = decision.alert_level
         if self._sound is not None:
             self._sound.update(decision)
@@ -363,23 +292,10 @@ class AlertManager:
             self._sound.stop()
             self._sound = None
 
-    # ------------------------------------------------------------------
     def annotate(self, frame: np.ndarray, decision: Decision,
                  angles_text: str = "", info: dict | None = None,
                  bbox: tuple | None = None, timestamp: float = 0.0) -> np.ndarray:
-        """رسم HUD وضعیت و هشدار روی فریم (برای نمایش زنده).
-
-        Args:
-            frame: تصویر BGR ورودی (بدون تغییر باقی می‌ماند).
-            decision: خروجی موتور تصمیم.
-            angles_text: متن اختیاری زوایا (مثلاً ``"Y:3 P:-2 R:1"``).
-            info: مقادیر اضافی برای نوار پایین (مثلاً ``{"FPS": "29.8"}``).
-            bbox: جعبه چهره ``(x, y, w, h)`` برای رسم.
-            timestamp: زمان فریم (برای چشمک زدن بنر).
-
-        Returns:
-            نسخه حاشیه‌نویسی‌شده فریم.
-        """
+        """رسم HUD وضعیت و هشدار روی فریم (برای نمایش زنده)."""
         out = frame.copy()
         h, w = out.shape[:2]
         level = decision.alert_level
@@ -441,7 +357,6 @@ class AlertManager:
 
 
 def _blend_rect(img: np.ndarray, p0: tuple, p1: tuple, color: tuple, alpha: float) -> None:
-    """رسم مستطیل نیمه‌شفاف درجا."""
     x0, y0 = max(p0[0], 0), max(p0[1], 0)
     x1, y1 = min(p1[0], img.shape[1]), min(p1[1], img.shape[0])
     if x1 <= x0 or y1 <= y0:

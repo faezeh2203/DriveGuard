@@ -1,16 +1,4 @@
-"""
-تشخیص چهره و استخراج لندمارک (Face Detection & Landmark Extraction)
-====================================================================
-
-از **MediaPipe Face Landmarker** (مدل Face Mesh با ۴۶۸ نقطه + ۱۰
-نقطه عنبیه) استفاده می‌کنیم؛ مطابق مشخصات پروژه که MediaPipe Face
-Mesh (468 Landmark) را به‌عنوان ماژول Landmark Extraction معرفی
-کرده است. برای مرحله Face Detection نیز مدل مذکور به‌صورت درونی
-از BlazeFace استفاده می‌کند (RetinaFace گزینه جایگزین است).
-
-خروجی ماژول، لندمارک‌ها در **مختصات پیکسلی تصویر** است (تا مستقیماً
-به SolvePnP داده شود) به همراه جعبه محصورکننده چهره.
-"""
+"""تشخیص چهره و استخراج لندمارک (Face Detection & Landmark Extraction)"""
 
 from __future__ import annotations
 
@@ -28,13 +16,7 @@ BASE_LANDMARK_COUNT = 468
 
 @dataclass(frozen=True)
 class FaceObservation:
-    """نتیجه تشخیص چهره در یک فریم.
-
-    Attributes:
-        landmarks: آرایه (N, 3) مختصات پیکسلی لندمارک‌ها (x, y, z).
-        bbox: جعبه محصور به صورت ``(x, y, w, h)`` در مختصات تصویر.
-        landmark_count: تعداد کل لندمارک‌ها (468 یا 478).
-    """
+    """نتیجه تشخیص چهره در یک فریم."""
 
     landmarks: np.ndarray
     bbox: tuple
@@ -46,39 +28,16 @@ class FaceObservation:
         return self.landmark_count > BASE_LANDMARK_COUNT
 
     def model_points_2d(self) -> np.ndarray:
-        """مختصات تصویری شش نقطه استاندارد مدل سه‌بعدی صورت.
-
-        Returns:
-            آرایه (6, 2) مناسب ورودی ``cv2.solvePnP``.
-        """
+        """مختصات تصویری شش نقطه استاندارد مدل سه‌بعدی صورت."""
         return self.landmarks[list(FACE_MODEL_LANDMARK_IDS), :2]
 
     def eye_points(self, left_ids: tuple, right_ids: tuple) -> tuple:
-        """مختصات لندمارک‌های دو چشم برای محاسبه EAR.
-
-        Returns:
-            تاپل ``(left_eye (6,2), right_eye (6,2))``.
-        """
+        """مختصات لندمارک‌های دو چشم برای محاسبه EAR."""
         return self.landmarks[list(left_ids), :2], self.landmarks[list(right_ids), :2]
 
 
 class FaceDetector:
-    """پوشش MediaPipe Face Landmarker در حالت VIDEO.
-
-    MediaPipe در حالت VIDEO با بهره‌گیری از شماره فریم (timestamp)
-    ردیابی زمانی انجام می‌دهد؛ بنابراین فراخوانی‌ها باید با
-    timestamp صعودی انجام شوند.
-
-    Args:
-        model_path: مسیر فایل ``face_landmarker.task``.
-        num_faces: حداکثر تعداد چهره.
-        min_face_detection_confidence: آستانه اطمینان تشخیص.
-        min_tracking_confidence: آستانه اطمینان ردیابی.
-        process_width: عرض پردازش (کوچک‌سازی فریم برای سرعت؛ 0 = خاموش).
-
-    Raises:
-        FileNotFoundError: اگر فایل مدل موجود نباشد.
-    """
+    """پوشش MediaPipe Face Landmarker در حالت VIDEO."""
 
     def __init__(
         self,
@@ -93,7 +52,7 @@ class FaceDetector:
 
         if not Path(model_path).exists():
             raise FileNotFoundError(
-                f"model file not found: {model_path} — "
+                f"model file not found: {model_path}; "
                 "download it via scripts/download_model.py"
             )
         options = vision.FaceLandmarkerOptions(
@@ -110,18 +69,7 @@ class FaceDetector:
         self._process_width = int(process_width)
 
     def process(self, frame_bgr: np.ndarray, timestamp_ms: int) -> FaceObservation | None:
-        """پردازش یک فریم BGR و استخراج چهره اصلی.
-
-        Args:
-            frame_bgr: تصویر ورودی BGR.
-            timestamp_ms: زمان فریم بر حسب میلی‌ثانیه (صعودی).
-
-        Returns:
-            شیء :class:`FaceObservation` یا ``None`` اگر چهره‌ای دیده نشد.
-
-        Raises:
-            ValueError: اگر timestamp غیر صعودی باشد.
-        """
+        """پردازش یک فریم BGR و استخراج چهره اصلی."""
         if timestamp_ms <= self._last_ts_ms:
             raise ValueError(
                 f"timestamp must be strictly increasing: {timestamp_ms} <= {self._last_ts_ms}"

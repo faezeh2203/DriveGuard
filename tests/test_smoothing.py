@@ -6,8 +6,6 @@ from dms.smoothing import HysteresisFilter, KalmanFilter1D, MovingAverage, smoot
 
 
 class TestKalman1D:
-    """فیلتر کالمن تک‌متغیره."""
-
     def test_first_measurement_is_adopted(self):
         kf = KalmanFilter1D()
         assert kf.step(12.0) == pytest.approx(12.0)
@@ -51,8 +49,6 @@ class TestKalman1D:
 
 
 class TestMovingAverage:
-    """میانگین متحرک پنجره‌ای."""
-
     def test_basic_average(self):
         ma = MovingAverage(window=3)
         ma.update(1); ma.update(2)
@@ -83,8 +79,6 @@ class TestMovingAverage:
 
 
 class TestHysteresis:
-    """هیسترزیس وضعیت — کاهش False Alarm."""
-
     def test_initial_state_none(self):
         h = HysteresisFilter(min_frames=3)
         assert h.stable_state is None

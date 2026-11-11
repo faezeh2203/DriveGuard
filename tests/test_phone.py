@@ -17,7 +17,6 @@ FPS = 30
 
 def run_frames(pipeline, detector, n, pitch=0.0, yaw=0.0, ear=0.30,
                visible=True, start_ms=0):
-    """اجرای n فریم با وضعیت ثابت؛ خروجی: آخرین FrameResult و ts."""
     detector.set_state(pitch=pitch, yaw=yaw, ear=ear, visible=visible)
     result = None
     for i in range(n):
@@ -27,7 +26,6 @@ def run_frames(pipeline, detector, n, pitch=0.0, yaw=0.0, ear=0.30,
 
 @pytest.fixture
 def phone_pipeline(config, fake_detector, fake_phone_detector):
-    """پایپ‌لاین با تشخیص‌دهنده گوشی مصنوعی (فعال)."""
     from dms.pipeline import DMSPipeline
 
     p = DMSPipeline(config=config, detector=fake_detector,
@@ -37,8 +35,6 @@ def phone_pipeline(config, fake_detector, fake_phone_detector):
 
 
 class TestNearFaceRule:
-    """قاعده هندسی «نزدیک بودن گوشی به چهره»."""
-
     FACE = (200.0, 150.0, 200.0, 240.0)  # x,y,w,h
 
     def test_center_inside_face(self):
@@ -61,8 +57,6 @@ class TestNearFaceRule:
 
 
 class TestPhoneState:
-    """تزریق وضعیت PHONE در پایپ‌لاین."""
-
     def test_phone_near_face_confirmed(self, phone_pipeline, fake_detector,
                                        fake_phone_detector):
         fake_phone_detector.set_mode("near")
@@ -102,8 +96,6 @@ class TestPhoneState:
 
 
 class TestPhoneAlert:
-    """هشدار استفاده از تلفن همراه."""
-
     def test_warning_after_threshold(self, phone_pipeline, fake_detector,
                                      fake_phone_detector):
         fake_phone_detector.set_mode("near")
@@ -126,8 +118,6 @@ class TestPhoneAlert:
 
 
 class TestPhonePriority:
-    """اولویت PHONE نسبت به سایر وضعیت‌ها."""
-
     def test_phone_overrides_down(self, phone_pipeline, fake_detector,
                                   fake_phone_detector):
         # سر پایین (نگاه به گوشی روی پا) + گوشی نزدیک چهره ⇒ PHONE
@@ -137,8 +127,6 @@ class TestPhonePriority:
 
 
 class TestPhoneDisabled:
-    """رفتار پایپ‌لاین بدون ماژول گوشی."""
-
     def test_no_phone_detector_no_crash(self, config, fake_detector):
         from dms.pipeline import DMSPipeline
 
@@ -181,8 +169,6 @@ def _use_missing_model(cfg: DMSConfig) -> DMSConfig:
 
 
 class TestPhoneConfig:
-    """پیکربندی ماژول گوشی."""
-
     def test_defaults(self):
         cfg = PhoneConfig()
         assert cfg.enabled
@@ -210,8 +196,6 @@ MODEL = Path(__file__).resolve().parents[1] / "assets" / "yolo11n.onnx"
 @pytest.mark.skipif(not MODEL.exists(),
                     reason="مدل yolo11n.onnx دانلود نشده است")
 class TestPhoneDetectorReal:
-    """تست دود تشخیص‌دهنده واقعی (YOLO11n ONNX) روی فریم خالی."""
-
     def test_no_phone_in_blank_frame(self):
         detector = PhoneDetector(model_path=str(MODEL))
         try:
@@ -234,7 +218,6 @@ class TestPhoneDetectorReal:
             detector.close()
 
     def test_phone_detection_latency(self):
-        """زمان استنتاج ONNX باید برای اجرای هر ۱۵ فریم قابل قبول باشد."""
         import time
         detector = PhoneDetector(model_path=str(MODEL))
         try:

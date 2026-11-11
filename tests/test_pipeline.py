@@ -14,7 +14,6 @@ FPS = 30
 
 def run_frames(pipeline, detector, n, pitch=0.0, yaw=0.0, roll=0.0,
                ear=0.30, visible=True, start_ms=0):
-    """اجرای n فریم با وضعیت ثابت؛ خروجی: آخرین FrameResult."""
     detector.set_state(pitch=pitch, yaw=yaw, roll=roll,
                        ear=ear, visible=visible)
     result = None
@@ -24,8 +23,6 @@ def run_frames(pipeline, detector, n, pitch=0.0, yaw=0.0, roll=0.0,
 
 
 class TestPipelineStates:
-    """تشخیص وضعیت‌های توجه انتها-به-انتها."""
-
     def test_forward_detection(self, pipeline, fake_detector):
         result, _ = run_frames(pipeline, fake_detector, 10)
         assert result.decision.stable_state is AttentionState.FORWARD
@@ -67,8 +64,6 @@ class TestPipelineStates:
 
 
 class TestPipelineTelemetry:
-    """ثبت داده در پایپ‌لاین."""
-
     def test_frames_logged(self, pipeline, fake_detector):
         run_frames(pipeline, fake_detector, 10)
         assert pipeline.store.frame_count() == 10
@@ -78,8 +73,6 @@ class TestPipelineTelemetry:
 
 
 class TestPipelinePerformance:
-    """الزام کارایی مشخصات پروژه: 25-30 FPS."""
-
     def test_latency_per_frame(self, pipeline, fake_detector):
         run_frames(pipeline, fake_detector, 5)
         n = 30
@@ -94,8 +87,6 @@ class TestPipelinePerformance:
 
 
 class TestKalmanSmoothingIntegration:
-    """کاهش نویز زوایا توسط زنجیره کالمن."""
-
     def test_noisy_yaw_smoothed(self, pipeline, fake_detector):
         rng = np.random.default_rng(7)
         angles = []
@@ -110,10 +101,7 @@ class TestKalmanSmoothingIntegration:
 
 
 class TestRegressions:
-    """رگرسیون باگ‌های رفع‌شده در نسخه ۲."""
-
     def test_short_face_loss_is_not_eyes_closed(self, pipeline, fake_detector):
-        # نسخه قبل در گم شدن کوتاه EAR=0 به آشکارساز می‌داد (چشم بسته کاذب)
         _, ts = run_frames(pipeline, fake_detector, 10)
         result, _ = run_frames(pipeline, fake_detector, 3, visible=False, start_ms=ts)
         assert result.drowsiness is not None

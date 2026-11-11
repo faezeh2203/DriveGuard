@@ -92,8 +92,6 @@ class TestExport:
 
 
 class TestMetrics:
-    """متریک‌های Accuracy / F1 / FPR با داده‌های محاسبه‌دستی."""
-
     Y_TRUE = ["FORWARD", "FORWARD", "LEFT", "LEFT", "DOWN"]
     Y_PRED = ["FORWARD", "LEFT", "LEFT", "FORWARD", "DOWN"]
 
@@ -141,8 +139,6 @@ class TestMetrics:
 
 
 class TestConfig:
-    """پیکربندی JSON."""
-
     def test_from_json(self, tmp_path):
         cfg_file = tmp_path / "cfg.json"
         cfg_file.write_text(json.dumps({

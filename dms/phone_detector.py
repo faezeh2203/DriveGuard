@@ -1,26 +1,4 @@
-"""
-شناسایی تلفن همراه (Phone Detection)
-=====================================
-
-ماژول شناسایی گوشی در دست راننده بر پایه **YOLO11n در قالب ONNX**
-اجرا‌شده با **ONNX Runtime** (کوچک‌ترین نسخه YOLO Ultralytics آموزش
-دیده روی COCO که کلاس ``cell phone`` دارد). این مسیر با فناوری‌های
-الزامی پروژه (ONNX Runtime) هم‌خوان است و بدون GPU روی CPU اجرا
-می‌شود.
-
-سیاست تشخیص «تماس دستی / گوشی در دست»:
-
-- مرکز جعبه گوشی داخل **ناحیه بزرگ‌شده جعبه چهره** باشد
-  (تابع :func:`phone_near_face`) ⇒ گوشی نزدیک صورت/گوش ⇒ وضعیت PHONE؛
-- گوشی در سایر نقاط کادر (مثلاً روی پایه داشبورد برای مسیریابی)
-  «نزدیک چهره» نیست و هشدار ایجاد نمی‌کند؛
-- نگاه به گوشی روی پا بدون دید کامل گوشی، از مسیر pitch (وضعیت
-  DOWN) پوشش داده می‌شود.
-
-برای حفظ نرخ Real-Time، تشخیص هر ``detect_every`` فریم یک‌بار اجرا
-و نتیجه تا ``hold_frames`` فریم نگه داشته می‌شود (در پایپ‌لاین) و
-ورودی مدل به ``input_size`` کوچک می‌شود (Letterbox).
-"""
+"""شناسایی تلفن همراه (Phone Detection)"""
 
 from __future__ import annotations
 
@@ -54,19 +32,7 @@ PHONE_CLASS_ID = COCO80_CLASS_NAMES.index("cell phone")
 
 def phone_near_face(phone_bbox: tuple, face_bbox: tuple,
                     expand: float = 0.6) -> bool:
-    """بررسی «نزدیک بودن گوشی به چهره».
-
-    مرکز جعبه گوشی باید داخل جعبه چهره باشد که از هر طرف به نسبت
-    ``expand`` از ابعاد چهره بزرگ شده است.
-
-    Args:
-        phone_bbox: جعبه گوشی ``(x, y, w, h)``.
-        face_bbox: جعبه چهره ``(x, y, w, h)``.
-        expand: نسبت بزرگ‌نمایی جعبه چهره (نسبت به طول/عرض آن).
-
-    Returns:
-        True اگر گوشی نزدیک چهره باشد.
-    """
+    """بررسی «نزدیک بودن گوشی به چهره»."""
     fx, fy, fw, fh = face_bbox
     px, py, pw, ph = phone_bbox
     margin_x = fw * expand / 2.0
@@ -78,19 +44,7 @@ def phone_near_face(phone_bbox: tuple, face_bbox: tuple,
 
 
 class PhoneDetector:
-    """تشخیص‌گر تلفن همراه با YOLO11n ONNX و ONNX Runtime.
-
-    Args:
-        model_path: مسیر فایل ``yolo11n.onnx``.
-        score_threshold: حداقل اطمینان تشخیص.
-        nms_threshold: آستانه IoU برای حذف جعبه‌های تکراری.
-        input_size: اندازه ورودی مدل (باید مضرب 32 باشد).
-        max_results: حداکثر تعداد جعبه گوشی برگشتی.
-        process_width: عرض پردازش (کوچک‌سازی فریم برای سرعت؛ 0 = خاموش).
-
-    Raises:
-        FileNotFoundError: اگر فایل مدل موجود نباشد.
-    """
+    """تشخیص‌گر تلفن همراه با YOLO11n ONNX و ONNX Runtime."""
 
     def __init__(self, model_path: str = "assets/yolo11n.onnx",
                  score_threshold: float = 0.4,
@@ -100,7 +54,7 @@ class PhoneDetector:
                  process_width: int = 480) -> None:
         if not Path(model_path).exists():
             raise FileNotFoundError(
-                f"model file not found: {model_path} — "
+                f"model file not found: {model_path}; "
                 "download it via scripts/download_model.py"
             )
         import onnxruntime as ort
@@ -121,13 +75,7 @@ class PhoneDetector:
                          dtype=np.float32)
         self._session.run([self._output_name], {self._input_name: dummy})
 
-    # ------------------------------------------------------------------
     def _letterbox(self, frame_bgr: np.ndarray) -> tuple:
-        """تغییر اندازه با حفظ نسبت (Letterbox) به ورودی مربعی مدل.
-
-        Returns:
-            تاپل ``(padded_image, scale, pad_x, pad_y)``.
-        """
         height, width = frame_bgr.shape[:2]
         size = self._input_size
         scale = min(size / width, size / height)
@@ -141,22 +89,7 @@ class PhoneDetector:
 
     def process(self, frame_bgr: np.ndarray, timestamp_ms: int,
                 face_bbox: tuple | None = None) -> list:
-        """تشخیص تلفن همراه در فریم.
-
-        Args:
-            frame_bgr: تصویر BGR فریم.
-            timestamp_ms: زمان فریم بر حسب میلی‌ثانیه (صعودی).
-            face_bbox: جعبه چهره ``(x, y, w, h)`` — در تشخیص‌دهنده
-                واقعی نادیده گرفته می‌شود و صرفاً برای هم‌امضایی با
-                جایگزین‌های تستی (Stub) پذیرفته می‌شود.
-
-        Returns:
-            لیست جعبه‌های گوشی ``[(x, y, w, h), ...]`` در مختصات
-            تصویر اصلی (خالی اگر گوشی‌ای دیده نشد).
-
-        Raises:
-            ValueError: اگر timestamp غیر صعودی باشد.
-        """
+        """تشخیص تلفن همراه در فریم."""
         if timestamp_ms <= self._last_ts_ms:
             raise ValueError(
                 f"timestamp must be strictly increasing: {timestamp_ms} <= {self._last_ts_ms}"

@@ -14,8 +14,6 @@ def clf() -> AttentionClassifier:
 
 
 class TestThresholdRules:
-    """قواعد آستانه‌ای مطابق مشخصات پروژه."""
-
     def test_forward(self, clf):
         assert clf.classify(EulerAngle(0, 0, 0)).state is AttentionState.FORWARD
 
@@ -58,8 +56,6 @@ class TestThresholdRules:
 
 
 class TestGazeIris:
-    """ترکیب جهت نگاه عنبیه در حالت مرزی سر."""
-
     def test_gaze_zero_without_iris_landmarks(self, clf):
         res = clf.classify(EulerAngle(0, 0, 0), landmarks=None)
         assert res.gaze_offset == 0.0
@@ -72,8 +68,6 @@ class TestGazeIris:
 
 
 class TestEARComputation:
-    """EAR باید از لندمارک‌های مصنوعی درست خوانده شود."""
-
     def test_ear_from_synthetic_face(self, clf):
         face = make_synthetic_face(0, 0, 0, ear=0.28)
         res = clf.classify(EulerAngle(0, 0, 0), landmarks=face)
@@ -89,8 +83,6 @@ class TestEARComputation:
 
 
 class TestResultContract:
-    """قرارداد خروجی."""
-
     def test_result_type(self, clf):
         res = clf.classify(EulerAngle(0, 0, 0))
         assert isinstance(res, AttentionResult)

@@ -1,19 +1,4 @@
-"""
-ارکستراتور پایپ‌لاین (Pipeline)
-================================
-
-:class:`DMSPipeline` کل زنجیره مشخصات پروژه را برای هر فریم اجرا
-می‌کند::
-
-    Frame Acquisition → Face Detection → Landmark Extraction
-    → Head Pose Estimation (SolvePnP) → Temporal Smoothing (Kalman)
-    → Attention Classification → Drowsiness Detection
-    → Decision Engine → Driver Alerting → Telemetry
-
-این کلاس طوری طراحی شده که هر مرحله قابل تزریق/جایگزینی باشد
-(مثلاً در تست‌ها، تشخیص‌دهنده چهره با داده مصنوعی جایگزین می‌شود)
-و مستقل از رابط کاربری عمل کند.
-"""
+"""ارکستراتور پایپ‌لاین (Pipeline)"""
 
 from __future__ import annotations
 
@@ -43,23 +28,7 @@ log = logging.getLogger(__name__)
 
 @dataclass
 class FrameResult:
-    """خروجی کامل پردازش یک فریم — رابط داده‌ای داشبورد و UI.
-
-    Attributes:
-        frame_id: شماره فریم.
-        timestamp: زمان فریم (ثانیه).
-        angles: زوایای هموارشده سر.
-        attention: خروجی طبقه‌بند توجه.
-        drowsiness: خروجی آشکارساز خواب‌آلودگی (None اگر چهره نبود).
-        decision: خروجی موتور تصمیم.
-        bbox: جعبه محصور چهره (None اگر دیده نشده).
-        latency_ms: کل زمان پردازش فریم (میلی‌ثانیه).
-        fps: نرخ فریم لحظه‌ای سیستم.
-        alert_event: رخداد هشدار (None اگر هشداری فعال نبود).
-        face_seen: آیا چهره در همین فریم تشخیص داده شد.
-        phone_detected: آیا گوشی نزدیک چهره دیده شد.
-        alert_count: تعداد کل هشدارهای جلسه تا این فریم.
-    """
+    """خروجی کامل پردازش یک فریم، رابط داده‌ای داشبورد و UI."""
 
     frame_id: int
     timestamp: float
@@ -77,22 +46,7 @@ class FrameResult:
 
 
 class DMSPipeline:
-    """پایپ‌لاین کامل تشخیص حواس‌پرتی راننده.
-
-    Args:
-        config: پیکربندی سراسری.
-        detector: تشخیص‌دهنده چهره (پیش‌فرض: MediaPipe FaceDetector).
-        store: ذخیره‌ساز Telemetry (پیش‌فرض: SQLite در مسیر پیکربندی).
-        enable_sound: فعال‌سازی هشدار صوتی.
-        phone_detector: تشخیص‌دهنده تلفن همراه (پیش‌فرض: ساخت از
-            پیکربندی؛ اگر مدل دانلود نشده باشد غیرفعال می‌شود).
-
-    Example:
-        >>> pipeline = DMSPipeline()                       # doctest: +SKIP
-        >>> result = pipeline.process(frame_bgr, ts_ms=33)  # doctest: +SKIP
-        >>> result.decision.stable_state                    # doctest: +SKIP
-        <AttentionState.FORWARD: 'FORWARD'>
-    """
+    """پایپ‌لاین کامل تشخیص حواس‌پرتی راننده."""
 
     def __init__(self, config: DMSConfig | None = None,
                  detector: FaceDetector | None = None,
@@ -138,7 +92,7 @@ class DMSPipeline:
                 except Exception as exc:  # noqa: BLE001
                     log.warning("phone detection disabled: %s", exc)
             else:
-                log.warning("phone detection disabled: model not found (%s) — "
+                log.warning("phone detection disabled: model not found (%s); "
                             "run scripts/download_model.py",
                             self.config.phone.model_path)
         self._phones_last: list = []
@@ -160,18 +114,8 @@ class DMSPipeline:
         self._closed = False
         self.session_id = self.store.session_id
 
-    # ------------------------------------------------------------------
     def process(self, frame_bgr: np.ndarray, timestamp_ms: int) -> FrameResult:
-        """پردازش کامل یک فریم.
-
-        Args:
-            frame_bgr: تصویر BGR فریم.
-            timestamp_ms: زمان فریم بر حسب میلی‌ثانیه (صعودی؛ ورودی
-                MediaPipe در حالت VIDEO).
-
-        Returns:
-            شیء :class:`FrameResult` شامل همه خروجی‌ها.
-        """
+        """پردازش کامل یک فریم."""
         t0 = time.perf_counter()
         self._frame_counter += 1
         ts = timestamp_ms / 1000.0
@@ -190,8 +134,7 @@ class DMSPipeline:
             self._lost_run += 1
         track = self.tracker.update(
             observation.bbox if observation is not None else None, dt)
-        # جعبه چهره برای تشخیص گوشی: تشخیص فعلی، یا موقعیت ردیابی‌شده هنگام
-        # گم شدن کوتاه (گوشی کنار گوش اغلب بخشی از چهره را می‌پوشاند)
+        # گوشی کنار گوش معمولاً بخشی از صورت را می‌پوشاند، پس از bbox ردیاب هم استفاده می‌کنیم
         face_bbox = None
         if observation is not None:
             face_bbox = observation.bbox
@@ -203,15 +146,8 @@ class DMSPipeline:
             frame_bgr, timestamp_ms, face_bbox)
         return result
 
-    # ------------------------------------------------------------------
     def _detect_phone(self, frame_bgr: np.ndarray | None, timestamp_ms: int,
                       face_bbox: tuple | None) -> bool:
-        """اجرای تشخیص گوشی با بازه‌گذاری و نگهداری نتیجه.
-
-        تشخیص هر ``detect_every`` فریم یک‌بار اجرا می‌شود و نتیجه
-        (نزدیک بودن گوشی به چهره) تا ``hold_frames`` فریم نگه داشته
-        می‌شود تا هیسترزیس وضعیت بین دو اجرا نشکند.
-        """
         if self.phone_detector is None or face_bbox is None or frame_bgr is None:
             return False
         # فریم اول بلافاصله بررسی می‌شود و سپس هر detect_every فریم
@@ -233,18 +169,14 @@ class DMSPipeline:
                        for p in self._phones_last)
         return False
 
-    # ------------------------------------------------------------------
     def _process_observation(self, observation, lost_frames: int,
                              ts: float, dt: float, shape,
                              t0: float,
                              frame_bgr: np.ndarray | None = None,
                              timestamp_ms: int = 0,
                              face_bbox: tuple | None = None) -> FrameResult:
-        """ادامه زنجیره پردازش پس از مرحله تشخیص."""
         if observation is None and lost_frames >= self.config.detection.max_lost_frames:
-            # چهره واقعاً گم شده: حالت NO_FACE و بازنشانی فیلترها.
-            # آخرین وضعیت خواب‌آلودگی حفظ می‌شود: راننده‌ای که خوابش برده و
-            # سرش از کادر افتاده نباید هشدار بحرانی‌اش قطع شود.
+            # اگر راننده خوابش برده و سرش از کادر افتاده، هشدار خواب‌آلودگی نباید قطع شود
             angles = EulerAngle(0.0, 0.0, 0.0)
             for kf in self._kfs.values():
                 kf.reset()
@@ -253,10 +185,7 @@ class DMSPipeline:
                 raw_state=AttentionState.NO_FACE, state=AttentionState.NO_FACE)
             drowsy = self.drowsiness_detector.last_result
         elif observation is None:
-            # گم شدن کوتاه: آخرین زوایا نگه داشته می‌شود (رفع نویز).
-            # EAR بدون لندمارک قابل اندازه‌گیری نیست (۰ برمی‌گردد)؛ تغذیه آن
-            # به آشکارساز، «چشم بسته» کاذب و در FPS پایین هشدار خواب‌آلودگی
-            # کاذب می‌ساخت — پس آخرین نتیجه آشکارساز نگه داشته می‌شود.
+            # بدون لندمارک EAR صفر می‌شود و چشم بسته حساب می‌شد؛ نتیجه قبلی را نگه می‌داریم
             angles = self._smoothed_angles()
             attention = self.classifier.classify(angles, None)
             drowsy = self.drowsiness_detector.last_result
@@ -309,9 +238,7 @@ class DMSPipeline:
             alert_count=self.decision_engine.alert_count,
         )
 
-    # ------------------------------------------------------------------
     def _smooth_angles(self, raw: EulerAngle, dt: float) -> EulerAngle:
-        """اعمال فیلتر کالمن روی سه زاویه (Temporal Smoothing)."""
         if not self.config.smoothing.use_kalman:
             return raw
         return EulerAngle(
@@ -321,7 +248,6 @@ class DMSPipeline:
         )
 
     def _smoothed_angles(self) -> EulerAngle:
-        """آخرین زوایای هموارشده (بدون اندازه‌گیری جدید)."""
         return EulerAngle(
             pitch=self._kfs["pitch"].value,
             yaw=self._kfs["yaw"].value,
@@ -330,7 +256,6 @@ class DMSPipeline:
 
     def _log(self, observation, angles, attention, drowsy, decision,
              alert_event, ts: float, latency: float) -> None:
-        """ثبت فریم و رخداد هشدار در Telemetry."""
         record = FrameRecord(
             session_id=self.session_id,
             camera_id=self.config.telemetry.camera_id,
@@ -350,8 +275,7 @@ class DMSPipeline:
         except Exception:  # noqa: BLE001
             # خطای پایگاه‌داده هرگز نباید پردازش زنده را متوقف کند
             log.exception("telemetry: failed to log frame")
-        # فقط تغییر وضعیت هشدار (شروع/ارتقا/تغییر علت/پایان) ثبت می‌شود؛
-        # نسخه قبل در هر فریم یک رکورد می‌نوشت و جدول را پر می‌کرد.
+        # فقط شروع/ارتقا/پایان هشدار ثبت می‌شود، نه هر فریم
         if alert_event is not None and alert_event.is_transition:
             try:
                 self.store.log_alert(AlertRecord(
@@ -368,7 +292,6 @@ class DMSPipeline:
             except Exception:  # noqa: BLE001
                 log.exception("telemetry: failed to log alert")
 
-    # ------------------------------------------------------------------
     def close(self) -> None:
         """بستن منابع (تشخیص‌دهنده‌ها، صدا و پایگاه‌داده)؛ تکرار آن بی‌خطر است."""
         if self._closed:

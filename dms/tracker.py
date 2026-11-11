@@ -1,13 +1,4 @@
-"""
-ردیابی چهره (Face Tracking)
-============================
-
-ردیاب تک‌هدف الهام‌گرفته از **SORT**: هر تشخیص با فیلتر کالمنِ
-جعبه محصور (مرکز + ابعاد) هموار می‌شود و در فریم‌هایی که تشخیص
-ناموفق است (نویز لحظه‌ای، پلک زدن مدل تشخیص)، تا ``max_lost_frames``
-فریم آخرین وضعیت «نگه داشته می‌شود». این مکانیزم، سقوط لحظه‌ای
-زاویه‌ها و هشدارهای کاذب «No-face» را از بین می‌برد.
-"""
+"""ردیابی چهره (Face Tracking)"""
 
 from __future__ import annotations
 
@@ -18,14 +9,7 @@ from .smoothing import KalmanFilter1D
 
 @dataclass
 class TrackState:
-    """وضعیت ردیابی هدف.
-
-    Attributes:
-        cx, cy: مرکز هموارشده جعبه محصور.
-        w, h: عرض و ارتفاع هموارشده.
-        lost_frames: تعداد فریم‌های متوالی بدون تشخیص.
-        age: عمر ردیاب (تعداد فریم‌های پردازش‌شده).
-    """
+    """وضعیت ردیابی هدف."""
 
     cx: float = 0.0
     cy: float = 0.0
@@ -41,13 +25,7 @@ class TrackState:
 
 
 class FaceTracker:
-    """ردیاب چهره تک‌هدف با فیلتر کالمن و نگهداری هدف گم‌شده.
-
-    Args:
-        max_lost_frames: حداکثر فریم‌های نگهداری پس از گم شدن.
-        process_noise: نویز فرایند کالمن روی مرکز جعبه.
-        measurement_noise: نویز اندازه‌گیری کالمن.
-    """
+    """ردیاب چهره تک‌هدف با فیلتر کالمن و نگهداری هدف گم‌شده."""
 
     def __init__(self, max_lost_frames: int = 10,
                  process_noise: float = 4.0,
@@ -73,15 +51,7 @@ class FaceTracker:
         return self.state.age > 0 and self.state.lost_frames < self.max_lost_frames
 
     def update(self, bbox: tuple | None, dt: float = 1.0 / 30.0) -> TrackState:
-        """به‌روزرسانی ردیاب با جعبه تشخیص جدید (یا None).
-
-        Args:
-            bbox: جعبه ``(x, y, w, h)`` یا ``None`` اگر چهره دیده نشد.
-            dt: گام زمانی.
-
-        Returns:
-            وضعیت جدید :class:`TrackState`.
-        """
+        """به‌روزرسانی ردیاب با جعبه تشخیص جدید (یا None)."""
         if bbox is not None:
             self.state.age += 1
             x, y, w, h = bbox

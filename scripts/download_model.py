@@ -1,10 +1,4 @@
-"""دانلود مدل‌های سیستم (Face Landmarker + YOLO11n ONNX).
-
-Usage:
-    python scripts/download_model.py
-    python scripts/download_model.py --only face   # فقط مدل چهره
-    python scripts/download_model.py --only phone  # فقط مدل گوشی
-"""
+"""دانلود مدل‌های سیستم (Face Landmarker + YOLO11n ONNX)."""
 
 from __future__ import annotations
 
@@ -38,18 +32,7 @@ MIN_VALID_SIZE = 1_000_000  # کمتر از این حجم = پاسخ خطای س
 
 
 def download(urls: list[str], out_path: Path) -> Path:
-    """دانلود مدل از اولین آدرس موفق.
-
-    Args:
-        urls: فهرست آدرس‌های جایگزین به ترتیب تلاش.
-        out_path: مسیر مقصد فایل مدل.
-
-    Returns:
-        مسیر فایل دانلودشده.
-
-    Raises:
-        RuntimeError: اگر همه آدرس‌ها ناموفق باشند.
-    """
+    """دانلود مدل از اولین آدرس موفق."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
     last_error = "unknown"
     for url in urls:

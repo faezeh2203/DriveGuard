@@ -1,15 +1,4 @@
-"""
-Fixtureهای مشترک تست‌ها
-=========================
-
-برای تست کردن زنجیره بدون وابستگی به مدل‌های سنگین (MediaPipe) و
-وبکم واقعی، از **داده مصنوعی** استفاده می‌کنیم:
-
-1. ``synthetic_landmarks``: ساخت لندمارک‌های 478 نقطه‌ای مصنوعی
-   با پروجکشن مدل سه‌بعدی صورت در زاویه معلوم (Ground Truth دقیق).
-2. ``fake_detector``: جایگزین (Stub) تشخیص‌دهنده چهره که
-   لندمارک‌های از پیش ساخته‌شده را برمی‌گرداند.
-"""
+"""Fixtureهای مشترک تست‌ها"""
 
 from __future__ import annotations
 
@@ -32,17 +21,6 @@ from dms.geometry import LEFT_EYE_EAR_IDS, RIGHT_EYE_EAR_IDS
 def make_synthetic_face(pitch: float, yaw: float, roll: float,
                         size: tuple = (640, 480),
                         ear: float = 0.30) -> np.ndarray:
-    """ساخت لندمارک‌های مصنوعی 478 نقطه‌ای یک چهره در وضعیت معلوم.
-
-    شش نقطه استاندارد با پروجکشن پرسپکتیو مدل سه‌بعدی ساخته می‌شوند
-    (زاویه دقیقاً معلوم = Ground Truth)؛ پروجکشن با همان ماتریس
-    دوربین پیش‌فرض تخمین‌گر انجام می‌شود تا زاویه بازیابی‌شده با
-    Ground Truth منطبق باشد. نقاط باقی‌مانده به‌گونه‌ای پر می‌شوند
-    که EAR دو چشم برابر مقدار درخواستی باشد (برای تست خواب‌آلودگی).
-
-    Returns:
-        آرایه (478, 3) مختصات پیکسلی لندمارک‌ها.
-    """
     w, h = size
     pts2d = project_face_model(pitch, yaw, roll, translation=(0, 0, 500),
                                camera_matrix=default_camera_matrix(size))
@@ -68,7 +46,7 @@ def make_synthetic_face(pitch: float, yaw: float, roll: float,
     _fill_eye(landmarks, LEFT_EYE_EAR_IDS, ear, eye_w=60, anchor_pos=0, direction=+1)
     _fill_eye(landmarks, RIGHT_EYE_EAR_IDS, ear, eye_w=60, anchor_pos=3, direction=-1)
 
-    # عنبیه در مرکز هر چشم (نگاه رو به جلو) — ۵ نقطه هر عنبیه هم‌مکان
+    # عنبیه در مرکز هر چشم (نگاه رو به جلو)، ۵ نقطه هر عنبیه هم‌مکان
     left_center = (landmarks[33, :2] + landmarks[133, :2]) / 2.0
     right_center = (landmarks[362, :2] + landmarks[263, :2]) / 2.0
     for idx in range(468, 473):
@@ -80,12 +58,6 @@ def make_synthetic_face(pitch: float, yaw: float, roll: float,
 
 def _fill_eye(landmarks: np.ndarray, ids: tuple, ear: float,
               eye_w: float, anchor_pos: int, direction: float) -> None:
-    """چیدمان شش نقطه چشم برای EAR معلوم.
-
-    الگوی استاندارد EAR (Soukupová & Čech): جفت افقی ``ids[0]``/``ids[3]``
-    و چهار نقطه پلک بالا/پایین. ``anchor_pos`` جایگاه لندمارک لنگر مدل
-    است (۰ برای چشم چپ، ۳ برای چشم راست) که مقدار فعلی آن حفظ می‌شود.
-    """
     anchor_idx = ids[anchor_pos]
     base = landmarks[anchor_idx, :2].copy()
     other_idx = ids[3 - anchor_pos]
@@ -104,13 +76,6 @@ def _fill_eye(landmarks: np.ndarray, ids: tuple, ear: float,
 
 
 class FakeDetector:
-    """جایگزین تستی :class:`dms.face_detector.FaceDetector`.
-
-    زوایای سر و EAR فریم‌های بعدی را از پیش دریافت می‌کند و
-    لندمارک مصنوعی متناظر را برمی‌گرداند؛ رفتار «چهره دیده نشدن»
-    نیز با ``visible=False`` شبیه‌سازی می‌شود.
-    """
-
     def __init__(self) -> None:
         self.pitch = 0.0
         self.yaw = 0.0
@@ -121,7 +86,6 @@ class FakeDetector:
 
     def set_state(self, pitch=0.0, yaw=0.0, roll=0.0,
                   ear=0.30, visible=True) -> None:
-        """تنظیم وضعیت چهره در فریم‌های بعدی."""
         self.pitch, self.yaw, self.roll = pitch, yaw, roll
         self.ear, self.visible = ear, visible
 
@@ -148,37 +112,26 @@ class FakeDetector:
 
 @pytest.fixture
 def fake_detector() -> FakeDetector:
-    """تشخیص‌دهنده مصنوعی قابل تنظیم برای تست‌های پایپ‌لاین."""
     return FakeDetector()
 
 
 class FakePhoneDetector:
-    """جایگزین تستی :class:`dms.phone_detector.PhoneDetector`.
-
-    حالت ``near`` گوشی را دقیقاً روی مرکز چهره (نزدیک) و حالت
-    ``far`` آن را دور از چهره (دو برابر عرض چهره به سمت راست)
-    قرار می‌دهد تا قاعده «نزدیکی به چهره» مستقل از هندسه چهره
-    مصنوعی تست شود.
-    """
-
     def __init__(self) -> None:
         self.mode = "none"  # none | near | far
 
     def set_mode(self, mode: str) -> None:
-        """تنظیم حالت گوشی در فریم‌های بعدی."""
         assert mode in ("none", "near", "far")
         self.mode = mode
 
     def process(self, frame_bgr: np.ndarray, timestamp_ms: int,
                 face_bbox: tuple | None = None) -> list:
-        """بازگرداندن جعبه گوشی (مصنوعی) بر اساس حالت فعلی."""
         if self.mode == "none" or face_bbox is None:
             return []
         fx, fy, fw, fh = face_bbox
         w, h = 60.0, 120.0
         if self.mode == "near":
             cx, cy = fx + fw / 2.0, fy + fh / 2.0
-        else:  # far — خارج از ناحیه بزرگ‌شده چهره
+        else:  # far، خارج از ناحیه بزرگ‌شده چهره
             cx, cy = fx + fw * 2.0, fy + fh / 2.0
         return [(cx - w / 2.0, cy - h / 2.0, w, h)]
 
@@ -188,13 +141,11 @@ class FakePhoneDetector:
 
 @pytest.fixture
 def fake_phone_detector() -> FakePhoneDetector:
-    """تشخیص‌دهنده گوشی مصنوعی برای تست‌های پایپ‌لاین."""
     return FakePhoneDetector()
 
 
 @pytest.fixture
 def config(tmp_path) -> DMSConfig:
-    """پیکربندی تست: بدون کالمن/با آستانه‌های مرجع و Telemetry موقت."""
     from dataclasses import replace
 
     cfg = DMSConfig()
@@ -208,7 +159,6 @@ def config(tmp_path) -> DMSConfig:
 
 @pytest.fixture
 def pipeline(config, fake_detector):
-    """پایپ‌لاین کامل با تشخیص‌دهنده مصنوعی و Telemetry موقت."""
     from dms.pipeline import DMSPipeline
 
     p = DMSPipeline(config=config, detector=fake_detector,

@@ -13,8 +13,6 @@ def det() -> DrowsinessDetector:
 
 
 class TestEARStates:
-    """باز/بسته بودن چشم."""
-
     def test_open_eyes(self, det):
         r = det.update(ear=0.30, pitch=0, timestamp=0.0)
         assert not r.eyes_closed and not r.drowsy
@@ -25,8 +23,6 @@ class TestEARStates:
 
 
 class TestBlinkVsMicrosleep:
-    """تفکیک پلک زدن طبیعی از خواب کوتاه."""
-
     def test_short_blink_is_not_drowsy(self, det):
         # 3 فریم بسته در 30fps = 0.1 ثانیه << 2 ثانیه
         t = 0.0
@@ -76,7 +72,7 @@ class TestBlinkVsMicrosleep:
         for _ in range(30):  # ۱ ثانیه باز
             det.update(0.30, 0, t); t += 1 / 30
         det.update(0.15, 0, t); t += 1 / 30  # دوباره بسته
-        for _ in range(30):  # ۱ ثانیه باز — هنوز کافی نیست
+        for _ in range(30):  # ۱ ثانیه باز، هنوز کافی نیست
             r = det.update(0.30, 0, t); t += 1 / 30
         assert r.drowsy
 
@@ -89,10 +85,7 @@ class TestBlinkVsMicrosleep:
 
 
 class TestHeadNodding:
-    """الگوی سر تکان دادن (nodding)."""
-
     def _nod(self, det, t0, fps=30):
-        """یک چرخه سر تکان: افت pitch و بازیابی."""
         t = t0
         for _ in range(6):
             det.update(0.3, -14, t); t += 1 / fps
@@ -141,8 +134,6 @@ class TestHeadNodding:
 
 
 class TestPerclos:
-    """PERCLOS: درصد زمان بسته بودن چشم در پنجره لغزان."""
-
     def test_perclos_measured(self, det):
         # الگوی ۲۰٪ بسته (۶ از ۳۰ فریم، کوتاه‌تر از microsleep)
         t = 0.0

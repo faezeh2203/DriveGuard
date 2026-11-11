@@ -1,22 +1,4 @@
-"""
-تشخیص خواب‌آلودگی (Drowsiness Detection)
-=========================================
-
-سه نشانه مستقل پایش می‌شود و هر کدام می‌تواند خواب‌آلودگی را اعلام کند:
-
-1. **Microsleep** — بسته ماندن پیوسته چشم‌ها بیش از ``closed_seconds``
-   ثانیه (معیار Eye Aspect Ratio؛ Soukupová & Čech, 2016). پلک زدن طبیعی
-   (کمتر از ``ear_blink_frames`` فریم) فقط شمارش می‌شود.
-2. **Head Nodding** — افت و برگشت مکرر pitch (سر خم شدن به پایین) در
-   یک پنجره زمانی.
-3. **PERCLOS** — درصد زمان بسته بودن چشم‌ها در یک پنجره لغزان (معیار
-   استاندارد NHTSA برای خستگی تدریجی که پلک‌های کند و نیمه‌بسته را
-   هم می‌گیرد).
-
-**ماندگاری (Latch)**: پس از اعلام خواب‌آلودگی، وضعیت تا زمانی که چشم‌ها
-به مدت ``recovery_seconds`` پیوسته باز نمانند (و nodding/PERCLOS برطرف
-نشده باشد) پابرجا می‌ماند؛ باز شدن لحظه‌ای چشم هشدار را قطع نمی‌کند.
-"""
+"""تشخیص خواب‌آلودگی (Drowsiness Detection)"""
 
 from __future__ import annotations
 
@@ -29,18 +11,7 @@ from .config import DrowsinessConfig
 
 @dataclass(frozen=True)
 class DrowsinessResult:
-    """خروجی ماژول خواب‌آلودگی در یک فریم.
-
-    Attributes:
-        eyes_closed: بسته بودن چشم‌ها در این فریم (EAR < آستانه).
-        drowsy: اعلام خواب‌آلودگی (ماندگار تا بازیابی راننده).
-        nodding: الگوی سر تکان دادن (افت و برگشت مکرر pitch).
-        closed_duration: مدت بسته بودن پیوسته چشم‌ها (ثانیه).
-        blink_count: تعداد پلک زدن‌های ثبت‌شده تا کنون.
-        perclos: نسبت زمان بسته بودن چشم در پنجره لغزان (0..1).
-        reason: علت اعلام خواب‌آلودگی: ``"eyes_closed"``، ``"nodding"``،
-            ``"perclos"`` یا رشته خالی.
-    """
+    """خروجی ماژول خواب‌آلودگی در یک فریم."""
 
     eyes_closed: bool
     drowsy: bool
@@ -52,28 +23,11 @@ class DrowsinessResult:
 
 
 class DrowsinessDetector:
-    """آشکارساز خواب‌آلودگی مبتنی بر EAR، nodding و PERCLOS.
-
-    Args:
-        config: پارامترهای آستانه (EAR، مدت بسته بودن و ...).
-    """
+    """آشکارساز خواب‌آلودگی مبتنی بر EAR، nodding و PERCLOS."""
 
     def __init__(self, config: DrowsinessConfig | None = None) -> None:
         self.config = config or DrowsinessConfig()
         self.reset()
-
-    # سازگاری با نسخه قبل (ثابت‌ها اکنون در پیکربندی هستند)
-    @property
-    def NOD_PITCH_DROP(self) -> float:  # noqa: N802
-        return self.config.nod_pitch_drop
-
-    @property
-    def NOD_COUNT(self) -> int:  # noqa: N802
-        return self.config.nod_count
-
-    @property
-    def NOD_WINDOW_SECONDS(self) -> float:  # noqa: N802
-        return self.config.nod_window_seconds
 
     def reset(self) -> None:
         """بازنشانی تمام حالت‌های زمانی آشکارساز."""
@@ -102,19 +56,8 @@ class DrowsinessDetector:
         """آخرین نتیجه محاسبه‌شده (برای فریم‌های بدون چهره)."""
         return self._last_result
 
-    def update(self, ear: float, pitch: float, timestamp: float,
-               fps: float | None = None) -> DrowsinessResult:
-        """به‌روزرسانی وضعیت با EAR و pitch فریم جاری.
-
-        Args:
-            ear: میانگین Eye Aspect Ratio فریم جاری.
-            pitch: زاویه pitch هموارشده (درجه).
-            timestamp: زمان فریم بر حسب ثانیه (صعودی).
-            fps: (منسوخ؛ نادیده گرفته می‌شود — زمان از timestamp محاسبه می‌شود).
-
-        Returns:
-            شیء :class:`DrowsinessResult`.
-        """
+    def update(self, ear: float, pitch: float, timestamp: float) -> DrowsinessResult:
+        """به‌روزرسانی وضعیت با EAR و pitch فریم جاری."""
         cfg = self.config
         closed = ear < cfg.ear_closed_threshold
         if closed:
@@ -167,9 +110,7 @@ class DrowsinessDetector:
         self._last_result = result
         return result
 
-    # ------------------------------------------------------------------
     def _update_perclos(self, closed: bool, timestamp: float) -> float:
-        """PERCLOS وزن‌دار با زمان در پنجره لغزان."""
         if self._last_ts is not None and self._samples:
             dt = max(0.0, min(timestamp - self._last_ts, 1.0))
             # زمان بین نمونه قبلی و فعلی به وضعیت نمونه قبلی نسبت داده می‌شود
@@ -193,12 +134,6 @@ class DrowsinessDetector:
         return self._samples[-1][0] - self._samples[0][0]
 
     def _update_nodding(self, pitch: float, timestamp: float) -> bool:
-        """پایش الگوی «افت و برگشت مکرر سر» (Head Nodding).
-
-        هر بار که pitch به‌اندازه ``nod_pitch_drop`` درجه سقوط کند و سپس
-        بازیابی شود، یک nod ثبت می‌شود؛ اگر در پنجره ``nod_window_seconds``
-        ثانیه حداقل ``nod_count`` nod رخ دهد، nodding برقرار است.
-        """
         drop = self.config.nod_pitch_drop
         if pitch < -drop:
             if not self._in_nod:

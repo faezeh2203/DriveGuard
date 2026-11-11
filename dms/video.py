@@ -1,18 +1,4 @@
-"""
-مدیریت ورودی ویدیو (Video Capture)
-===================================
-
-کلاس :class:`VideoSource` یک لایه یکپارچه روی ``cv2.VideoCapture``
-است که سه نوع منبع را پشتیبانی می‌کند:
-
-- دوربین وبکم (شماره‌گذاری صحیح یا 0)
-- فایل ویدیویی (مسیر فایل)
-- جریان شبکه (آدرس RTSP/HTTP)
-
-این کلاس همچنین FPS واقعی منبع را در اختیار می‌گذارد و در صورت
-در دسترس نبودن FPS (رایج در برخی وبکم‌ها) مقدار پیش‌فرض 30 را
-برمی‌گرداند.
-"""
+"""مدیریت ورودی ویدیو (Video Capture)"""
 
 from __future__ import annotations
 
@@ -31,13 +17,7 @@ log = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class Frame:
-    """یک فریم ویدیو همراه با متادیتا.
-
-    Attributes:
-        image: تصویر BGR به صورت آرایه numpy.
-        timestamp: زمان فریم بر حسب ثانیه (از شروع منبع).
-        frame_id: شماره فریم (از صفر).
-    """
+    """یک فریم ویدیو همراه با متادیتا."""
 
     image: np.ndarray
     timestamp: float
@@ -51,15 +31,7 @@ class Frame:
 
 
 class VideoSource:
-    """پوشش امن ``cv2.VideoCapture`` با مدیریت خطا و FPS.
-
-    Args:
-        source: منبع ویدیو — عدد صحیح (وبکم)، مسیر فایل یا URL.
-        target_fps: FPS جایگزین هنگامی که منبع FPS گزارش نمی‌کند.
-
-    Raises:
-        IOError: اگر باز کردن منبع ناموفق باشد.
-    """
+    """پوشش امن ``cv2.VideoCapture`` با مدیریت خطا و FPS."""
 
     #: تعداد تلاش برای اتصال مجدد منبع زنده پس از قطع شدن
     MAX_RECONNECTS = 5
@@ -82,9 +54,8 @@ class VideoSource:
         return str(self.source).lower().startswith(("rtsp://", "rtmp://", "http://", "https://"))
 
     def _reconnect(self) -> bool:
-        """تلاش برای باز کردن دوباره منبع زنده (قطع لحظه‌ای USB/شبکه)."""
         for attempt in range(1, self.MAX_RECONNECTS + 1):
-            log.warning("video source lost — reconnecting (%d/%d)", attempt, self.MAX_RECONNECTS)
+            log.warning("video source lost; reconnecting (%d/%d)", attempt, self.MAX_RECONNECTS)
             self._cap.release()
             time.sleep(min(0.5 * attempt, 2.0))
             self._cap = cv2.VideoCapture(self.source)
@@ -102,19 +73,14 @@ class VideoSource:
         return (w, h)
 
     def read(self) -> Optional[Frame]:
-        """خواندن فریم بعدی.
-
-        Returns:
-            شیء :class:`Frame` یا ``None`` در پایان جریان/خطا.
-        """
+        """خواندن فریم بعدی."""
         ok, image = self._cap.read()
         if (not ok or image is None) and self.is_live and self._reconnect():
             ok, image = self._cap.read()
         if not ok or image is None:
             return None
         if self.is_live:
-            # برای منبع زنده شمارنده POS_FRAMES معتبر نیست؛ از ساعت یکنوای
-            # سیستم (نسبت به شروع) استفاده می‌شود
+            # POS_FRAMES برای وبکم معتبر نیست
             self._live_frames += 1
             frame_id = self._live_frames
             timestamp = time.monotonic() - self._t0

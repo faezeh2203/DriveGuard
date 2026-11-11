@@ -1,16 +1,4 @@
-"""
-ثبت داده و متریک‌ها (Telemetry & Metrics)
-==========================================
-
-سه وظیفه در این ماژول انجام می‌شود (مطابق مشخصات پروژه):
-
-1. **Telemetry**: ثبت وضعیت هر فریم و رخدادهای هشدار در پایگاه‌داده
-   **SQLite** (جدول‌های ``frames`` و ``alerts``).
-2. **خروجی JSON/CSV**: صادرکردن گزارش جلسه برای تحلیل بعدی.
-3. **Metrics**: محاسبه Accuracy، F1-score و False Positive Rate
-   با مقایسه وضعیت سیستم و Ground Truth (برای ارزیابی روی ویدیوی
-   برچسب‌خورده — تابع‌های خالص و بدون وابستگی به پایگاه‌داده).
-"""
+"""ثبت داده و متریک‌ها (Telemetry & Metrics)"""
 
 from __future__ import annotations
 
@@ -61,7 +49,7 @@ CREATE INDEX IF NOT EXISTS idx_frames_session ON frames(session_id, frame_id);
 CREATE INDEX IF NOT EXISTS idx_alerts_session ON alerts(session_id, id);
 """
 
-# ستون‌هایی که در نسخه ۲ به جدول alerts اضافه شدند (مهاجرت پایگاه‌داده قدیمی)
+# ستون‌های جدید alerts برای دیتابیس‌های قدیمی
 _ALERT_MIGRATIONS = {
     "kind": "TEXT NOT NULL DEFAULT 'STARTED'",
     "reason": "TEXT NOT NULL DEFAULT ''",
@@ -103,17 +91,7 @@ class AlertRecord:
 
 
 class TelemetryStore:
-    """ذخیره‌ساز Telemetry روی SQLite با خروجی JSON/CSV.
-
-    ایمن برای استفاده هم‌زمان از چند Thread (حلقه پردازش + داشبورد):
-    همه دسترسی‌ها با یک قفل سریال می‌شوند و حالت WAL فعال است تا
-    خواندن، نوشتن را مسدود نکند.
-
-    Args:
-        db_path: مسیر فایل پایگاه‌داده (پوشه‌ها در صورت نیاز ساخته می‌شوند).
-        session_id: شناسه جلسه (پیش‌فرض: زمان ساخت).
-        log_every_frame: ثبت وضعیت هر فریم یا فقط رخدادها.
-    """
+    """ذخیره‌ساز Telemetry روی SQLite با خروجی JSON/CSV."""
 
     def __init__(self, db_path: str = "telemetry/dms_log.db",
                  session_id: str | None = None,
@@ -136,7 +114,6 @@ class TelemetryStore:
         self._closed = False
 
     def _migrate(self) -> None:
-        """افزودن ستون‌های جدید به جدول alerts در پایگاه‌داده‌های نسخه قبل."""
         cols = {row[1] for row in self._conn.execute("PRAGMA table_info(alerts)")}
         if not cols:
             return  # جدول هنوز ساخته نشده
@@ -167,7 +144,6 @@ class TelemetryStore:
     def __exit__(self, *exc) -> None:
         self.close()
 
-    # ------------------------------------------------------------------
     def log_frame(self, record: FrameRecord) -> None:
         """ثبت وضعیت یک فریم (اگر ``log_every_frame`` فعال باشد)."""
         if not self.log_every_frame:
@@ -210,7 +186,6 @@ class TelemetryStore:
             )
             self._conn.commit()
 
-    # ------------------------------------------------------------------
     def _query(self, sql: str, params: tuple = ()) -> list:
         with self._lock:
             self.flush()
@@ -223,11 +198,7 @@ class TelemetryStore:
         return int(rows[0][0])
 
     def alert_count(self, kind: str | None = None) -> int:
-        """تعداد رخدادهای هشدار ثبت‌شده در جلسه جاری.
-
-        Args:
-            kind: فیلتر نوع رخداد (مثلاً ``"STARTED"`` برای تعداد هشدارهای مجزا).
-        """
+        """تعداد رخدادهای هشدار ثبت‌شده در جلسه جاری."""
         if kind is None:
             rows = self._query("SELECT COUNT(*) FROM alerts WHERE session_id = ?",
                                (self.session_id,))
@@ -258,14 +229,7 @@ class TelemetryStore:
         return {state: int(count) for state, count in rows}
 
     def export_json(self, path: str | Path) -> Path:
-        """خروجی جلسه به صورت JSON (فریم‌ها + هشدارها + خلاصه).
-
-        Args:
-            path: مسیر فایل خروجی.
-
-        Returns:
-            مسیر فایل ساخته‌شده.
-        """
+        """خروجی جلسه به صورت JSON (فریم‌ها + هشدارها + خلاصه)."""
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         frames = [
@@ -305,14 +269,7 @@ class TelemetryStore:
         return path
 
     def export_csv(self, path: str | Path) -> Path:
-        """خروجی فریم‌های جلسه به صورت CSV.
-
-        Args:
-            path: مسیر فایل خروجی.
-
-        Returns:
-            مسیر فایل ساخته‌شده.
-        """
+        """خروجی فریم‌های جلسه به صورت CSV."""
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         rows = self._query(
@@ -332,24 +289,11 @@ class TelemetryStore:
         return path
 
 
-# ---------------------------------------------------------------------------
 # متریک‌های ارزیابی (توابع خالص؛ قابل استفاده در اسکریپت ارزیابی)
-# ---------------------------------------------------------------------------
 
 def confusion_counts(y_true: Sequence[str], y_pred: Sequence[str],
                      positive: str = "FORWARD") -> dict:
-    """شمارش‌های ماتریس درهم‌ریختگی برای سناریوی دوبخشی.
-
-    «مثبت» = وضعیت درست (``FORWARD``)؛ هر چیز دیگر «حواس‌پرتی» است.
-
-    Args:
-        y_true: وضعیت‌های واقعی.
-        y_pred: وضعیت‌های پیش‌بینی سیستم.
-        positive: برچسب کلاس مثبت.
-
-    Returns:
-        دیکشنری ``tp, tn, fp, fn``.
-    """
+    """شمارش‌های ماتریس درهم‌ریختگی برای سناریوی دوبخشی."""
     if len(y_true) != len(y_pred):
         raise ValueError("length mismatch between y_true and y_pred")
     tp = tn = fp = fn = 0
@@ -368,7 +312,7 @@ def confusion_counts(y_true: Sequence[str], y_pred: Sequence[str],
 
 
 def accuracy(y_true: Sequence[str], y_pred: Sequence[str]) -> float:
-    """دقت کلی (درصدر پیش‌بینی‌های صحیح) — 0..1."""
+    """دقت کلی (درصد پیش‌بینی‌های صحیح)، 0..1."""
     if not y_true:
         raise ValueError("empty sequences")
     if len(y_true) != len(y_pred):
@@ -379,10 +323,7 @@ def accuracy(y_true: Sequence[str], y_pred: Sequence[str]) -> float:
 
 def f1_score(y_true: Sequence[str], y_pred: Sequence[str],
              positive: str = "FORWARD") -> float:
-    """F1-score کلاس مثبت (``FORWARD``) — 0..1.
-
-    F1 = 2·P·R / (P+R) که در آن P = TP/(TP+FP) و R = TP/(TP+FN).
-    """
+    """F1-score کلاس مثبت (``FORWARD``)، 0..1."""
     c = confusion_counts(y_true, y_pred, positive)
     if c["tp"] == 0:
         return 0.0
@@ -395,13 +336,7 @@ def f1_score(y_true: Sequence[str], y_pred: Sequence[str],
 
 def false_positive_rate(y_true: Sequence[str], y_pred: Sequence[str],
                         positive: str = "FORWARD") -> float:
-    """FPR کلاس مثبت — نسبت نمونه‌های منفیِ واقعی که مثبت پیش‌بینی شدند.
-
-    توجه: با ``positive="FORWARD"``، این مقدار نسبت حواس‌پرتی‌های واقعی
-    است که سیستم «رو به جلو» تشخیص داده — یعنی **نرخ از دست دادن
-    حواس‌پرتی** (Miss Rate)، نه هشدار کاذب. برای نرخ هشدار کاذب از
-    :func:`false_alarm_rate` استفاده کنید.
-    """
+    """FPR کلاس مثبت، نسبت نمونه‌های منفیِ واقعی که مثبت پیش‌بینی شدند."""
     c = confusion_counts(y_true, y_pred, positive)
     negatives = c["tn"] + c["fp"]
     if negatives == 0:
@@ -411,8 +346,9 @@ def false_positive_rate(y_true: Sequence[str], y_pred: Sequence[str],
 
 def false_alarm_rate(y_true: Sequence[str], y_pred: Sequence[str],
                      attentive: str = "FORWARD") -> float:
-    """نرخ هشدار کاذب — نسبت فریم‌هایی که راننده واقعاً رو به جلو بوده
-    اما سیستم حواس‌پرتی تشخیص داده است (معیار آزاردهندگی سیستم)."""
+    """نرخ هشدار کاذب، نسبت فریم‌هایی که راننده واقعاً رو به جلو بوده اما سیستم حواس‌پرتی تشخیص
+    داده است (معیار آزاردهندگی سیستم).
+    """
     c = confusion_counts(y_true, y_pred, attentive)
     actual_attentive = c["tp"] + c["fn"]
     if actual_attentive == 0:
@@ -421,12 +357,7 @@ def false_alarm_rate(y_true: Sequence[str], y_pred: Sequence[str],
 
 
 def evaluate(y_true: Sequence[str], y_pred: Sequence[str]) -> dict:
-    """محاسبه همه متریک‌های الزامی مشخصات پروژه یک‌جا.
-
-    Returns:
-        دیکشنری ``accuracy, f1_score, false_positive_rate,
-        false_alarm_rate, counts``.
-    """
+    """محاسبه همه متریک‌های الزامی مشخصات پروژه یک‌جا."""
     return {
         "accuracy": accuracy(y_true, y_pred),
         "f1_score": f1_score(y_true, y_pred),

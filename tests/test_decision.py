@@ -20,7 +20,6 @@ def drowsy(flag: bool) -> DrowsinessResult:
 
 
 def sustain(engine, state, seconds, start=0.0, fps=FPS, drowsiness=None):
-    """اجرای یک وضعیت ثابت به مدت مشخص؛ خروجی: (آخرین تصمیم، زمان بعدی، همه تصمیم‌ها)."""
     t = start
     decisions = []
     for _ in range(int(round(seconds * fps))):
@@ -31,13 +30,11 @@ def sustain(engine, state, seconds, start=0.0, fps=FPS, drowsiness=None):
 
 @pytest.fixture
 def engine() -> DecisionEngine:
-    """موتور تصمیم با سیاست پیش‌فرض."""
     return DecisionEngine(DecisionConfig())
 
 
 @pytest.fixture
 def strict_engine() -> DecisionEngine:
-    """سیاست سخت‌گیرانه: نگاه به اطراف هم پس از ۲ ثانیه هشدار دارد."""
     return DecisionEngine(DecisionConfig(lateral_alert_seconds=2.0))
 
 
@@ -64,8 +61,6 @@ class TestHysteresis:
 
 
 class TestThresholds:
-    """آستانه هشدار وابسته به نوع حواس‌پرتی."""
-
     def test_info_before_threshold(self, engine):
         d, _, _ = sustain(engine, AttentionState.DOWN, 1.0)
         assert d.alert_level is AlertLevel.INFO
@@ -97,8 +92,6 @@ class TestThresholds:
 
 
 class TestLateralPolicy:
-    """نگاه کوتاه به آینه/اطراف مجاز است؛ نگاه طولانی هشدار دارد."""
-
     def test_mirror_check_no_alert(self, engine):
         d, _, _ = sustain(engine, AttentionState.LEFT, 2.0)
         assert d.alert_level is AlertLevel.INFO
@@ -127,8 +120,6 @@ class TestLateralPolicy:
 
 
 class TestContinuousTimer:
-    """جابه‌جایی بین حالت‌های حواس‌پرتی تایمر را صفر نمی‌کند."""
-
     def test_switching_states_does_not_reset_timer(self, engine):
         _, t, _ = sustain(engine, AttentionState.DOWN, 1.2)
         d, _, _ = sustain(engine, AttentionState.PHONE, 0.5, start=t)
@@ -146,8 +137,6 @@ class TestContinuousTimer:
 
 
 class TestLatchedAlert:
-    """هشدار تا اصلاح رفتار راننده ادامه دارد."""
-
     def test_brief_glance_forward_does_not_clear(self, engine):
         _, t, _ = sustain(engine, AttentionState.PHONE, 2.0)
         # ۰.۵ ثانیه نگاه به جلو (کمتر از recovery_seconds = ۱)
@@ -221,8 +210,6 @@ class TestDrowsinessAlert:
 
 
 class TestCooldown:
-    """Cooldown هرگز هشدار را سرکوب نمی‌کند؛ فقط شناسه را بازاستفاده می‌کند."""
-
     def test_quick_redistraction_reopens_same_alert(self, engine):
         _, t, _ = sustain(engine, AttentionState.DOWN, 3.0)
         first_id = engine.alert_count
